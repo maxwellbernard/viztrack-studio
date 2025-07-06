@@ -23,8 +23,8 @@ image_cache = {}
 error_logged = set()
 
 # load environment variables
-client_id = st.secrets["SPOTIFY_CLIENT_ID"]
-client_secret = st.secrets["SPOTIFY_CLIENT_SECRET"]
+client_id = os.getenv("SPOTIFY_CLIENT_ID")
+client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
 
 client_credentials_manager = SpotifyClientCredentials(
     client_id=client_id, client_secret=client_secret
