@@ -20,6 +20,7 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 """
 
+import base64
 import io
 import tempfile
 from datetime import datetime, timezone
@@ -289,8 +290,18 @@ selected_attribute, analysis_metric = normalize_inputs(
     selected_attribute, analysis_metric
 )
 
-col1, col2, col3 = st.columns(3)
-col2.image("2024 Spotify Brand Assets/spotify_full_logo_black.svg", width=235)
+st.markdown(
+    """
+    <div style="text-align: center;">
+        <img src="data:image/svg+xml;base64,{}" width="235">
+    </div>
+    """.format(
+        base64.b64encode(
+            open("2024 Spotify Brand Assets/spotify_full_logo_black.svg", "rb").read()
+        ).decode()
+    ),
+    unsafe_allow_html=True,
+)
 
 st.markdown(
     """
@@ -344,9 +355,8 @@ st.markdown(
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-
     st.markdown(
-    """
+        """
     <div style="
         border: 1px solid #d3d3d3; 
         padding: 10px; 
@@ -370,12 +380,12 @@ with col1:
         </div>
     </div>
     """,
-    unsafe_allow_html=True,
-) 
+        unsafe_allow_html=True,
+    )
 
 with col2:
     st.markdown(
-    """
+        """
     <div style="
         border: 1px solid #d3d3d3; 
         padding: 10px; 
@@ -399,12 +409,12 @@ with col2:
         </div>
     </div>
     """,
-    unsafe_allow_html=True,
-    ) 
+        unsafe_allow_html=True,
+    )
 
 with col3:
     st.markdown(
-    """
+        """
     <div style="
         border: 1px solid #d3d3d3; 
         padding: 10px; 
@@ -428,12 +438,12 @@ with col3:
         </div>
     </div>
     """,
-    unsafe_allow_html=True,
+        unsafe_allow_html=True,
     )
 
 with col4:
     st.markdown(
-    """
+        """
     <div style="
         border: 1px solid #d3d3d3; 
         padding: 10px; 
@@ -457,7 +467,7 @@ with col4:
         </div>
     </div>
     """,
-    unsafe_allow_html=True,
+        unsafe_allow_html=True,
     )
 st.markdown("<br>", unsafe_allow_html=True)
 
