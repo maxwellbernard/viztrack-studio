@@ -321,6 +321,19 @@ def plot_final_frame(
     ax.xaxis.set_label_coords(-0.95, -0.05)
     setup_bar_plot_style(ax, top_n, analysis_metric)
 
+    fig.text(
+        0.63, # corener was 98
+        0.02,
+        "www.viztracks.com",
+        ha="right",
+        va="bottom",
+        fontproperties=font_prop_heading,
+        fontsize=24,
+        color="#bed1bc",
+        # color="#888888",
+        transform=fig.transFigure,
+    )
+
     # year and month text
     ax.text(
         0.38,

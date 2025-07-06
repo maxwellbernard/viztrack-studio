@@ -21,12 +21,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 """
 
 import base64
-import io
 import tempfile
 from datetime import datetime, timezone
 
-import matplotlib.pyplot as plt
 import pandas as pd
+import requests
 import streamlit as st
 
 from modules.create_bar_animation import (
@@ -36,15 +35,8 @@ from modules.create_bar_animation import (
     interp_steps,
     period,
 )
-from modules.create_bar_plot import plot_final_frame
-from modules.data_processing import (
-    extract_json_from_zip,
-    fetch_and_process_files,
-    prepare_df_for_visual_anims,
-    prepare_df_for_visual_plots,
-)
+from modules.data_processing import prepare_df_for_visual_anims
 from modules.normalize_inputs import normalize_inputs
-from modules.prepare_visuals import error_logged, image_cache
 from modules.supabase_client import supabase
 
 st.set_page_config(
@@ -144,6 +136,44 @@ def track_event(event_type: str, metadata: dict = None, count: int = 1):
             print(f"SUPABASE ERROR: {e}")
 
 
+def send_file_to_backend(uploaded_file):
+    files = {"file": (uploaded_file.name, uploaded_file, uploaded_file.type)}
+    response = requests.post("http://localhost:8000/process", files=files)
+    return response
+
+
+def send_image_request_to_backend(
+    session_id, selected_attribute, analysis_metric, top_n, start_date, end_date
+):
+    data = {
+        "session_id": session_id,
+        "selected_attribute": selected_attribute,
+        "analysis_metric": analysis_metric,
+        "top_n": top_n,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+    }
+    response = requests.post("http://localhost:8000/generate_image", json=data)
+    return response
+
+def send_animation_request_to_backend(
+    session_id, selected_attribute, analysis_metric, top_n, start_date, end_date, speed_for_bar_animation, days, interp_steps, period
+):
+    data = {
+        "session_id": session_id,
+        "selected_attribute": selected_attribute,
+        "analysis_metric": analysis_metric,
+        "top_n": top_n,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "speed_for_bar_animation": speed_for_bar_animation,
+        "days": days,
+        "interp_steps": interp_steps,
+        "period": period,
+    }
+    response = requests.post("http://localhost:8000/generate_animation", json=data)
+    return response
+
 # Initialize session state with defaults
 if "form_values" not in st.session_state:
     st.session_state.form_values = {
@@ -173,6 +203,9 @@ if "download_animation_clicked" not in st.session_state:
 
 if "data_uploaded" not in st.session_state.form_values:
     st.session_state.form_values["data_uploaded"] = False
+
+if "session_id" not in st.session_state:
+    st.session_state.session_id = None
 
 
 # Initialise date range in session state
@@ -547,48 +580,57 @@ with st.expander(
 uploaded_file = st.file_uploader(
     "Upload your Spotify data (ZIP File)", type=["zip"], accept_multiple_files=False
 )
+
 if uploaded_file and not st.session_state.form_values["data_uploaded"]:
-    try:
-        json_contents = extract_json_from_zip(uploaded_file)
+    with st.spinner("Uploading and processing your data..."):
+        response = send_file_to_backend(uploaded_file)
 
-        if not json_contents:
+    if response.status_code == 200:
+        try:
+            # json_data = response.json()
+            response_data = response.json()
+            json_data = response_data["data"]
+            session_id = response_data["session_id"]
+            df = pd.DataFrame(json_data)
+            if "Date" in df.columns:
+                df["Date"] = pd.to_datetime(df["Date"])
+
+        except Exception as e:
+            st.error(f"Error parsing response: {str(e)}")
+            df = None
+
+        if df is not None and not df.empty and "Date" in df.columns:
+            if not st.session_state.form_values["data_uploaded"]:
+                start_date_file = df["Date"].min()
+                end_date_file = df["Date"].max()
+
+                st.session_state.form_values.update(
+                    {
+                        "start_date": start_date_file,
+                        "end_date": end_date_file,
+                        "data_min_date": start_date_file,
+                        "data_max_date": end_date_file,
+                        "data_uploaded": True,
+                    }
+                )
+                st.session_state.df = df
+                st.session_state.session_id = session_id
+                st.rerun()
+            else:
+                st.error("No valid data received from backend")
+        else:
             st.error(
-                "No Streaming History JSON files found in the ZIP file. Please make sure you uploaded the correct ZIP file from Spotify."
-            )
-        else:
-            df = fetch_and_process_files(json_contents)
-
-            start_date_file = df["Date"].min()
-            end_date_file = df["Date"].max()
-
-            # Store full data range and update session state
-            st.session_state.form_values.update(
-                {
-                    "start_date": start_date_file,
-                    "end_date": end_date_file,
-                    "data_min_date": start_date_file,
-                    "data_max_date": end_date_file,
-                    "data_uploaded": True,
-                }
+                "Failed to process file. Please make sure you uploaded the correct ZIP file from Spotify."
             )
 
-            st.session_state.df = df
-            st.rerun()
+    else:
+        st.error(
+            "Failed to process file. Please make sure you uploaded the correct ZIP file from Spotify."
+        )
+elif uploaded_file and st.session_state.form_values["data_uploaded"]:
+    st.success("Data uploaded successfully! 🎉")
+    df = st.session_state.df 
 
-    except Exception as e:
-        st.error(f"Error processing ZIP file: {str(e)}")
-
-elif uploaded_file:
-    try:
-        json_contents = extract_json_from_zip(uploaded_file)
-        if json_contents:
-            df = fetch_and_process_files(json_contents)
-            st.success("Data uploaded successfully! 🎉")
-        else:
-            st.error("No valid JSON files found in ZIP.")
-    except Exception as e:
-        st.error(f"Error processing ZIP file: {str(e)}")
-        df = None
 else:
     st.warning("Please upload your Spotify ZIP file to proceed.")
     df = None
@@ -633,44 +675,42 @@ if st.session_state.generate_image_clicked:
     )
     st.session_state.generate_image_clicked = False
 
-    if uploaded_file:
+    if hasattr(st.session_state, "session_id") and st.session_state.session_id:
         with st.spinner("Generating visual..."):
-            df_plot = prepare_df_for_visual_plots(
-                df,
-                selected_attribute=selected_attribute,
-                analysis_metric=analysis_metric,
-                start_date=start_date,
-                end_date=end_date,
-                top_n=top_n,
+            response = send_image_request_to_backend(
+                st.session_state.session_id,
+                selected_attribute,
+                analysis_metric,
+                top_n,
+                start_date,
+                end_date,
             )
 
-            plt.close("all")
+            if response.status_code == 200:
+                try:
+                    result = response.json()
+                    image_base64 = result["image"]
+                    filename = result["filename"]
 
-            fig = plot_final_frame(
-                df=df_plot,
-                top_n=top_n,
-                analysis_metric=analysis_metric,
-                selected_attribute=selected_attribute,
-                start_date=start_date,
-                end_date=end_date,
-                period=period,
-                days=days,
-                image_cache=image_cache,
-                error_logged=error_logged,
-            )
+                    # Convert base64 back to bytes
+                    image_bytes = base64.b64decode(image_base64)
 
-            buf = io.BytesIO()
-            fig.savefig(
-                buf, format="jpeg", dpi=300, facecolor="#F0F0F0", edgecolor="none"
-            )
-            buf.seek(0)
+                    st.session_state.bar_plot_bytes = image_bytes
+                    st.session_state.file_name_for_download = filename
 
-            st.session_state.bar_plot_bytes = buf.getvalue()
-            st.session_state.file_name_for_download = (
-                f"{selected_attribute}_{analysis_metric}_visual.jpg"
-            )
+                except Exception as e:
+                    st.error(f"Error processing image response: {str(e)}")
+            else:
+                try:
+                    error_data = response.json()
+                    st.error(
+                        f"Image generation failed: {error_data.get('error', 'Unknown error')}"
+                    )
+                except Exception:
+                    st.error("Failed to generate image. Please try again.")
     else:
         st.warning("Please upload your Spotify JSON files to proceed.")
+
 
 if st.session_state.bar_plot_bytes:
     st.markdown(
@@ -755,43 +795,49 @@ if st.session_state.generate_animation_clicked:
     )
     st.session_state.generate_animation_clicked = False  # reset flag
 
-    if uploaded_file:
+    if hasattr(st.session_state, "session_id") and st.session_state.session_id:
         with st.spinner("Generating animation..."):
             message_placeholder = st.empty()
             message_placeholder.write(
                 "Hold tight, this may take a few minutes if your data covers many years 😬"
             )
-            df_anim = prepare_df_for_visual_anims(
-                df,
-                selected_attribute=selected_attribute,
-                analysis_metric=analysis_metric,
-                start_date=start_date,
-                end_date=end_date,
-                top_n=top_n,
-            )
-
-            anim_bar_plot = create_bar_animation(
-                df_anim,
-                top_n,
-                analysis_metric,
+            response = send_animation_request_to_backend(
+                st.session_state.session_id,
                 selected_attribute,
-                period,
-                dpi,
-                days,
-                interp_steps,
+                analysis_metric,
+                top_n,
                 start_date,
                 end_date,
+                speed_for_bar_animation,
+                days,
+                interp_steps,
+                period,
             )
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
-                temp_file_path = temp_file.name
-                anim_bar_plot.save(
-                    temp_file_path,
-                    writer="ffmpeg",
-                    fps=speed_for_bar_animation,
-                    savefig_kwargs={"facecolor": "#F0F0F0"},
-                )
-                st.session_state.temp_file_path_bar_anim = temp_file_path
+            if response.status_code == 200:
+                try:
+                    result = response.json()
+                    video_base64 = result["video"]
+                    filename = result["filename"]
+                    video_bytes = base64.b64decode(video_base64)
+
+                    # Save to a temporary file for download
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+                        temp_file.write(video_bytes)
+                        temp_file_path = temp_file.name
+                        st.session_state.temp_file_path_bar_anim = temp_file_path
+                        st.session_state.file_name_for_download = filename
+                    message_placeholder.empty()
+                except Exception as e:
+                    st.error(f"Error processing animation response: {str(e)}")
+            else:
+                try:
+                    error_data = response.json()
+                    st.error(
+                        f"Animation generation failed: {error_data.get('error', 'Unknown error')}"
+                    )
+                except Exception:
+                    st.error("Failed to generate animation. Please try again.")
     else:
         st.warning("Please upload your Spotify JSON files to proceed.")
 
