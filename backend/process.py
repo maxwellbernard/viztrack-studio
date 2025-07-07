@@ -5,6 +5,7 @@ import tempfile
 from io import BytesIO
 
 import matplotlib
+import psutil
 import redis
 from flask import Flask, jsonify, request
 
@@ -36,6 +37,12 @@ redis_url = os.environ.get("REDIS_URL")
 r = redis.from_url(redis_url, decode_responses=False)
 
 
+def log_mem(msg):
+    print(
+        f"{msg} - Memory usage (MB): {psutil.Process(os.getpid()).memory_info().rss / 1024**2:.2f}"
+    )
+
+
 def store_session_data(session_id, df):
     """Store DataFrame in Redis with 1-hour expiration."""
     try:
@@ -61,6 +68,7 @@ def get_session_data(session_id):
 
 @app.route("/process", methods=["POST"])
 def process_zip():
+    log_mem("Start /process")
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
@@ -73,6 +81,7 @@ def process_zip():
         with tempfile.TemporaryDirectory() as tmpdir:
             zip_path = os.path.join(tmpdir, "uploaded.zip")
             uploaded_file.save(zip_path)
+            log_mem("After file save")
 
             json_contents = extract_json_from_zip(zip_path)
 
@@ -80,6 +89,7 @@ def process_zip():
                 return jsonify({"error": "No streaming history JSON files found"}), 400
 
             df = fetch_and_process_files(json_contents)
+            log_mem("After extract_json_from_zip")
 
             if df.empty:
                 return jsonify({"error": "No data processed from files"}), 400
@@ -90,6 +100,7 @@ def process_zip():
                     "data": df.to_dict(orient="records"),
                     "session_id": session_id,
                 }
+                log_mem("After store_session_data")
                 return jsonify(response_data), 200
             else:
                 return jsonify({"error": "Failed to store session data"}), 500
@@ -97,6 +108,7 @@ def process_zip():
         return jsonify(response_data), 200
 
     except Exception as e:
+        log_mem(f"Exception: {str(e)}")
         return jsonify({"error": f"Processing failed: {str(e)}"}), 500
 
 
