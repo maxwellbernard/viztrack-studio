@@ -22,8 +22,8 @@ from flask_cors import CORS
 from modules.create_bar_animation import create_bar_animation, dpi
 from modules.create_bar_plot import plot_final_frame
 from modules.data_processing import (
-    extract_json_from_zip,
-    fetch_and_process_files,
+    # extract_json_from_zip,
+    # fetch_and_process_files,
     extract_and_process_json_from_zip,
     prepare_df_for_visual_anims,
     prepare_df_for_visual_plots,
