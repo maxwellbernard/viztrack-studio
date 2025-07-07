@@ -28,14 +28,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from modules.create_bar_animation import (
-    create_bar_animation,
-    days,
-    dpi,
-    interp_steps,
-    period,
-)
-from modules.data_processing import prepare_df_for_visual_anims
+from modules.create_bar_animation import days, interp_steps, period
 from modules.normalize_inputs import normalize_inputs
 from modules.supabase_client import supabase
 
@@ -138,7 +131,9 @@ def track_event(event_type: str, metadata: dict = None, count: int = 1):
 
 def send_file_to_backend(uploaded_file):
     files = {"file": (uploaded_file.name, uploaded_file, uploaded_file.type)}
-    response = requests.post("http://localhost:8000/process", files=files)
+    response = requests.post(
+        "https://viztrack-studio-backend.onrender.com/process", files=files
+    )
     return response
 
 
@@ -153,11 +148,23 @@ def send_image_request_to_backend(
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
     }
-    response = requests.post("http://localhost:8000/generate_image", json=data)
+    response = requests.post(
+        "https://viztrack-studio-backend.onrender.com/generate_image", json=data
+    )
     return response
 
+
 def send_animation_request_to_backend(
-    session_id, selected_attribute, analysis_metric, top_n, start_date, end_date, speed_for_bar_animation, days, interp_steps, period
+    session_id,
+    selected_attribute,
+    analysis_metric,
+    top_n,
+    start_date,
+    end_date,
+    speed_for_bar_animation,
+    days,
+    interp_steps,
+    period,
 ):
     data = {
         "session_id": session_id,
@@ -171,8 +178,11 @@ def send_animation_request_to_backend(
         "interp_steps": interp_steps,
         "period": period,
     }
-    response = requests.post("http://localhost:8000/generate_animation", json=data)
+    response = requests.post(
+        "https://viztrack-studio-backend.onrender.com/generate_animation", json=data
+    )
     return response
+
 
 # Initialize session state with defaults
 if "form_values" not in st.session_state:
@@ -629,7 +639,7 @@ if uploaded_file and not st.session_state.form_values["data_uploaded"]:
         )
 elif uploaded_file and st.session_state.form_values["data_uploaded"]:
     st.success("Data uploaded successfully! 🎉")
-    df = st.session_state.df 
+    df = st.session_state.df
 
 else:
     st.warning("Please upload your Spotify ZIP file to proceed.")
@@ -822,7 +832,9 @@ if st.session_state.generate_animation_clicked:
                     video_bytes = base64.b64decode(video_base64)
 
                     # Save to a temporary file for download
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".mp4"
+                    ) as temp_file:
                         temp_file.write(video_bytes)
                         temp_file_path = temp_file.name
                         st.session_state.temp_file_path_bar_anim = temp_file_path

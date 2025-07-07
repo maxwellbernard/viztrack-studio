@@ -34,7 +34,6 @@ CORS(app)
 
 redis_url = os.environ.get("REDIS_URL")
 r = redis.from_url(redis_url, decode_responses=False)
-# r = redis.Redis(host="localhost", port=6379, db=0, decode_responses=False)
 
 
 def store_session_data(session_id, df):
