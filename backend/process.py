@@ -9,6 +9,8 @@ import redis
 from flask import Flask, jsonify, request
 
 matplotlib.use("Agg")
+import sys
+
 import matplotlib.pyplot as plt
 import pandas as pd
 from flask_cors import CORS
@@ -24,6 +26,7 @@ from modules.data_processing import (
 from modules.normalize_inputs import normalize_inputs
 from modules.prepare_visuals import error_logged, image_cache
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 app = Flask(__name__)
 CORS(app)
 
