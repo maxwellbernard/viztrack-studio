@@ -11,21 +11,57 @@ import pandas as pd
 import polars as pl
 
 
-def fetch_and_process_files(upload_file: list) -> pd.DataFrame:
-    """
-    Process JSON content from either file objects or raw content (from ZIP extraction).
+# def fetch_and_process_files(upload_file: list) -> pd.DataFrame:
+#     """
+#     Process JSON content from either file objects or raw content (from ZIP extraction).
 
-    Args:
-        upload_files (list): List of uploaded JSON file objects OR raw JSON content from ZIP
+#     Args:
+#         upload_files (list): List of uploaded JSON file objects OR raw JSON content from ZIP
 
-    Returns:
-        pd.DataFrame: A preprocessed DataFrame containing the necessary data
-    """
-    if not upload_file:
-        raise FileNotFoundError(
-            "No files uploaded. Please upload JSON files to continue."
-        )
+#     Returns:
+#         pd.DataFrame: A preprocessed DataFrame containing the necessary data
+#     """
+#     if not upload_file:
+#         raise FileNotFoundError(
+#             "No files uploaded. Please upload JSON files to continue."
+#         )
 
+#     needed_columns = [
+#         "ts",
+#         "ms_played",
+#         "master_metadata_track_name",
+#         "master_metadata_album_artist_name",
+#         "master_metadata_album_album_name",
+#         "spotify_track_uri",
+#     ]
+
+#     dfs = []
+#     for content in upload_file:
+#         try:
+#             if isinstance(content, bytes):
+#                 json_data = json.loads(content.decode("utf-8"))
+#             elif hasattr(content, "read"):
+#                 content.seek(0)
+#                 json_data = json.load(content)
+#             elif isinstance(content, str):
+#                 json_data = json.loads(content)
+#             else:
+#                 json_data = content
+
+#             if json_data:
+#                 df = pl.DataFrame(json_data, schema=needed_columns, strict=False)
+#                 dfs.append(df)
+
+#         except Exception as e:
+#             print(f"Warning: Could not process file. Error: {e}")
+#             continue
+
+#     if not dfs:
+#         raise ValueError("No valid JSON files could be processed.")
+
+#     combined_df = pl.concat(dfs)
+
+def extract_and_process_json_from_zip(zip_file) -> pl.DataFrame:
     needed_columns = [
         "ts",
         "ms_played",
@@ -34,27 +70,26 @@ def fetch_and_process_files(upload_file: list) -> pd.DataFrame:
         "master_metadata_album_album_name",
         "spotify_track_uri",
     ]
-
     dfs = []
-    for content in upload_file:
-        try:
-            if isinstance(content, bytes):
-                json_data = json.loads(content.decode("utf-8"))
-            elif hasattr(content, "read"):
-                content.seek(0)
-                json_data = json.load(content)
-            elif isinstance(content, str):
-                json_data = json.loads(content)
-            else:
-                json_data = content
 
-            if json_data:
-                df = pl.DataFrame(json_data, schema=needed_columns, strict=False)
-                dfs.append(df)
+    with zipfile.ZipFile(zip_file, "r") as zip_ref:
+        file_list = zip_ref.namelist()
+        json_file_names = [
+            filename for filename in file_list
+            if filename.endswith(".json") and "Audio" in filename and not filename.endswith("/")
+        ]
 
-        except Exception as e:
-            print(f"Warning: Could not process file. Error: {e}")
-            continue
+        for json_file_name in json_file_names:
+            try:
+                with zip_ref.open(json_file_name) as json_file:
+                    json_content = json_file.read()
+                    json_data = json.loads(json_content.decode("utf-8"))
+                    if json_data:
+                        df = pl.DataFrame(json_data, schema=needed_columns, strict=False)
+                        dfs.append(df)
+            except Exception as e:
+                print(f"Warning: Could not extract/process {json_file_name}: {e}")
+                continue
 
     if not dfs:
         raise ValueError("No valid JSON files could be processed.")

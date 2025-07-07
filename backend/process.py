@@ -24,6 +24,7 @@ from modules.create_bar_plot import plot_final_frame
 from modules.data_processing import (
     extract_json_from_zip,
     fetch_and_process_files,
+    extract_and_process_json_from_zip,
     prepare_df_for_visual_anims,
     prepare_df_for_visual_plots,
 )
@@ -83,12 +84,14 @@ def process_zip():
             uploaded_file.save(zip_path)
             log_mem("After file save")
 
-            json_contents = extract_json_from_zip(zip_path)
+            # json_contents = extract_json_from_zip(zip_path)
 
-            if not json_contents:
-                return jsonify({"error": "No streaming history JSON files found"}), 400
+            # if not json_contents:
+            #     return jsonify({"error": "No streaming history JSON files found"}), 400
 
-            df = fetch_and_process_files(json_contents)
+            # df = fetch_and_process_files(json_contents)
+            df = extract_and_process_json_from_zip(zip_path)
+
             log_mem("After extract_json_from_zip")
 
             if df.empty:
