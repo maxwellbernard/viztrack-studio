@@ -90,11 +90,11 @@ def plot_final_frame(
     if analysis_metric == "duration_ms":
         if selected_attribute == "track_name":
             monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"])[analysis_metric]
+                df.groupby(["Date", selected_attribute, "artist_name"], observed=True)[analysis_metric]
                 .sum()
                 .reset_index()
             )
-            track_uri_mapping = df.groupby([selected_attribute, "artist_name"])[
+            track_uri_mapping = df.groupby([selected_attribute, "artist_name"], observed=True)[
                 "track_uri"
             ].first()
             monthly_df["track_uri"] = monthly_df.apply(
@@ -105,13 +105,13 @@ def plot_final_frame(
             )
         elif selected_attribute == "album_name":
             monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"])[analysis_metric]
+                df.groupby(["Date", selected_attribute, "artist_name"], observed=True)[analysis_metric]
                 .sum()
                 .reset_index()
             )
-            track_uri_mapping = df.groupby([selected_attribute, "artist_name"])[
-                "track_uri"
-            ].first()
+            track_uri_mapping = df.groupby(
+                [selected_attribute, "artist_name"], observed=True
+            )["track_uri"].first()
             monthly_df["track_uri"] = monthly_df.apply(
                 lambda row: track_uri_mapping.get(
                     (row[selected_attribute], row["artist_name"])
@@ -120,11 +120,11 @@ def plot_final_frame(
             )
         else:  # artist_name
             monthly_df = (
-                df.groupby(["Date", selected_attribute])[analysis_metric]
+                df.groupby(["Date", selected_attribute], observed=True)[analysis_metric]
                 .sum()
                 .reset_index()
             )
-            track_uri_mapping = df.groupby(selected_attribute)["track_uri"].first()
+            track_uri_mapping = df.groupby(selected_attribute, observed=True)["track_uri"].first()
             monthly_df["track_uri"] = monthly_df[selected_attribute].map(
                 track_uri_mapping
             )
@@ -132,24 +132,24 @@ def plot_final_frame(
 
         if selected_attribute == "track_name":
             monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"]
+                [selected_attribute, "artist_name"], observed=True
             )[analysis_metric].cumsum()
         elif selected_attribute == "album_name":
             monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"]
+                [selected_attribute, "artist_name"], observed=True
             )[analysis_metric].cumsum()
         else:  # artist_name
             monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                selected_attribute
+                selected_attribute, observed=True
             )[analysis_metric].cumsum()
     elif analysis_metric == "Streams":
         if selected_attribute == "track_name":
             monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"])
+                df.groupby(["Date", selected_attribute, "artist_name"], observed=True)
                 .size()
                 .reset_index(name="Streams")
             )
-            track_uri_mapping = df.groupby([selected_attribute, "artist_name"])[
+            track_uri_mapping = df.groupby([selected_attribute, "artist_name"], observed=True)[
                 "track_uri"
             ].first()
             monthly_df["track_uri"] = monthly_df.apply(
@@ -160,11 +160,11 @@ def plot_final_frame(
             )
         elif selected_attribute == "album_name":
             monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"])
+                df.groupby(["Date", selected_attribute, "artist_name"], observed=True)
                 .size()
                 .reset_index(name="Streams")
             )
-            track_uri_mapping = df.groupby([selected_attribute, "artist_name"])[
+            track_uri_mapping = df.groupby([selected_attribute, "artist_name"], observed=True)[
                 "track_uri"
             ].first()
             monthly_df["track_uri"] = monthly_df.apply(
@@ -175,11 +175,11 @@ def plot_final_frame(
             )
         else:  # artist_name
             monthly_df = (
-                df.groupby(["Date", selected_attribute])
+                df.groupby(["Date", selected_attribute], observed=True)
                 .size()
                 .reset_index(name="Streams")
             )
-            track_uri_mapping = df.groupby(selected_attribute)["track_uri"].first()
+            track_uri_mapping = df.groupby(selected_attribute, observed=True)["track_uri"].first()
             monthly_df["track_uri"] = monthly_df[selected_attribute].map(
                 track_uri_mapping
             )
@@ -187,15 +187,15 @@ def plot_final_frame(
 
         if selected_attribute == "track_name":
             monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"]
+                [selected_attribute, "artist_name"], observed=True
             )[analysis_metric].cumsum()
         elif selected_attribute == "album_name":
             monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"]
+                [selected_attribute, "artist_name"], observed=True
             )[analysis_metric].cumsum()
         else:  # artist_name
             monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                selected_attribute
+                selected_attribute, observed=True
             )[analysis_metric].cumsum()
 
     monthly_df["Date"] = monthly_df["Date"].dt.to_timestamp()
@@ -216,7 +216,7 @@ def plot_final_frame(
 
     if selected_attribute == "track_name":
         current_df = cumulative_df.groupby(
-            [selected_attribute, "artist_name"], as_index=False
+            [selected_attribute, "artist_name"], as_index=False, observed=True
         ).agg(
             {
                 f"Cumulative_{analysis_metric}": "max",
@@ -225,7 +225,7 @@ def plot_final_frame(
         )
     elif selected_attribute == "album_name":
         current_df = cumulative_df.groupby(
-            [selected_attribute, "artist_name"], as_index=False
+            [selected_attribute, "artist_name"], as_index=False, observed=True
         ).agg(
             {
                 f"Cumulative_{analysis_metric}": "max",
@@ -233,7 +233,7 @@ def plot_final_frame(
             }
         )
     else:  # artist_name
-        current_df = cumulative_df.groupby(selected_attribute, as_index=False).agg(
+        current_df = cumulative_df.groupby(selected_attribute, as_index=False, observed=True).agg(
             {
                 f"Cumulative_{analysis_metric}": "max",
                 "track_uri": "first",
@@ -322,7 +322,7 @@ def plot_final_frame(
     setup_bar_plot_style(ax, top_n, analysis_metric)
 
     fig.text(
-        0.63, # corener was 98
+        0.63,  # corener was 98
         0.02,
         "www.viztracks.com",
         ha="right",

@@ -4,152 +4,110 @@ extract JSON from ZIP files, preprocess DataFrames, and prepare data for visuali
 """
 
 import json
+import os
 import zipfile
 from datetime import datetime
 
 import pandas as pd
 import polars as pl
+import psutil
 
 
-# def fetch_and_process_files(upload_file: list) -> pd.DataFrame:
-#     """
-#     Process JSON content from either file objects or raw content (from ZIP extraction).
+def log_mem(msg):
+    process = psutil.Process(os.getpid())
+    mem_mb = process.memory_info().rss / 1024**2
+    print(f"{msg} - Memory usage: {mem_mb:.2f} MB")
 
-#     Args:
-#         upload_files (list): List of uploaded JSON file objects OR raw JSON content from ZIP
-
-#     Returns:
-#         pd.DataFrame: A preprocessed DataFrame containing the necessary data
-#     """
-#     if not upload_file:
-#         raise FileNotFoundError(
-#             "No files uploaded. Please upload JSON files to continue."
-#         )
-
-#     needed_columns = [
-#         "ts",
-#         "ms_played",
-#         "master_metadata_track_name",
-#         "master_metadata_album_artist_name",
-#         "master_metadata_album_album_name",
-#         "spotify_track_uri",
-#     ]
-
-#     dfs = []
-#     for content in upload_file:
-#         try:
-#             if isinstance(content, bytes):
-#                 json_data = json.loads(content.decode("utf-8"))
-#             elif hasattr(content, "read"):
-#                 content.seek(0)
-#                 json_data = json.load(content)
-#             elif isinstance(content, str):
-#                 json_data = json.loads(content)
-#             else:
-#                 json_data = content
-
-#             if json_data:
-#                 df = pl.DataFrame(json_data, schema=needed_columns, strict=False)
-#                 dfs.append(df)
-
-#         except Exception as e:
-#             print(f"Warning: Could not process file. Error: {e}")
-#             continue
-
-#     if not dfs:
-#         raise ValueError("No valid JSON files could be processed.")
-
-#     combined_df = pl.concat(dfs)
 
 def extract_and_process_json_from_zip(zip_file) -> pl.DataFrame:
-    needed_columns = [
-        "ts",
-        "ms_played",
-        "master_metadata_track_name",
-        "master_metadata_album_artist_name",
-        "master_metadata_album_album_name",
-        "spotify_track_uri",
-    ]
-    dfs = []
-
-    with zipfile.ZipFile(zip_file, "r") as zip_ref:
-        file_list = zip_ref.namelist()
-        json_file_names = [
-            filename for filename in file_list
-            if filename.endswith(".json") and "Audio" in filename and not filename.endswith("/")
+    with pl.StringCache():
+        needed_columns = [
+            "ts",
+            "ms_played",
+            "master_metadata_track_name",
+            "master_metadata_album_artist_name",
+            "master_metadata_album_album_name",
+            "spotify_track_uri",
         ]
+        dfs = []
 
-        for json_file_name in json_file_names:
-            try:
-                with zip_ref.open(json_file_name) as json_file:
-                    json_content = json_file.read()
-                    json_data = json.loads(json_content.decode("utf-8"))
-                    if json_data:
-                        df = pl.DataFrame(json_data, schema=needed_columns, strict=False)
-                        dfs.append(df)
-            except Exception as e:
-                print(f"Warning: Could not extract/process {json_file_name}: {e}")
-                continue
-
-    if not dfs:
-        raise ValueError("No valid JSON files could be processed.")
-
-    combined_df = pl.concat(dfs)
-    processed_df = combined_df.select(
-        [
-            pl.col("ts")
-            .str.strptime(pl.Datetime, "%Y-%m-%dT%H:%M:%SZ", strict=False)
-            .alias("timestamp"),
-            pl.col("ms_played").alias("duration_ms"),
-            pl.col("master_metadata_track_name").alias("track_name"),
-            pl.col("master_metadata_album_artist_name").alias("artist_name"),
-            pl.col("master_metadata_album_album_name").alias("album_name"),
-            pl.col("spotify_track_uri").alias("track_uri"),
-        ]
-    )
-
-    processed_df = (
-        processed_df.drop_nulls()
-        .filter(
-            pl.col("duration_ms") > 30000
-        )  # removes songs only played for less than 30 seconds
-        # spotify does not count streams for songs played for less than 30 seconds
-        .with_columns(
-            [
-                pl.col("timestamp").alias("Date"),
-                (pl.col("duration_ms") / 60000).alias("duration_ms"),
-            ]
-        )
-        .drop("timestamp")
-    )
-
-    return processed_df.to_pandas()
-
-
-def extract_json_from_zip(zip_file) -> list:
-    """Extract JSON files from uploaded ZIP file, handling nested folder structures."""
-    json_contents = []
-
-    with zipfile.ZipFile(zip_file, "r") as zip_ref:
-        file_list = zip_ref.namelist()
-        json_file_names = []
-        for filename in file_list:
-            if (
-                filename.endswith(".json")
-                and "Audio" in filename  # dont want podcast or video files
+        with zipfile.ZipFile(zip_file, "r") as zip_ref:
+            file_list = zip_ref.namelist()
+            json_file_names = [
+                filename
+                for filename in file_list
+                if filename.endswith(".json")
+                and "Audio" in filename
                 and not filename.endswith("/")
-            ):
-                json_file_names.append(filename)
+            ]
 
-        for json_file_name in json_file_names:
-            try:
-                with zip_ref.open(json_file_name) as json_file:
-                    json_content = json_file.read()
-                    json_contents.append(json_content)
-            except Exception as e:
-                print(f"Warning: Could not extract {json_file_name}: {e}")
-                continue
-    return json_contents
+            for json_file_name in json_file_names:
+                try:
+                    with zip_ref.open(json_file_name) as json_file:
+                        json_content = json_file.read()
+                        json_data = json.loads(json_content.decode("utf-8"))
+                        if json_data:
+                            filtered_data = [
+                                {col: row.get(col, None) for col in needed_columns}
+                                for row in json_data
+                            ]
+                            # df = pl.DataFrame(filtered_data, schema=needed_columns, strict=False)
+                            df = pl.DataFrame(
+                                filtered_data,
+                                schema={
+                                    "ts": pl.Utf8,
+                                    "ms_played": pl.Int32,
+                                    "master_metadata_track_name": pl.Categorical,
+                                    "master_metadata_album_artist_name": pl.Categorical,
+                                    "master_metadata_album_album_name": pl.Categorical,
+                                    "spotify_track_uri": pl.Utf8,
+                                },
+                                strict=False,
+                            )
+                            df = df.with_columns(
+                                pl.col("ts").str.strptime(
+                                    pl.Datetime, "%Y-%m-%dT%H:%M:%SZ", strict=False
+                                )
+                            )
+                            df = (
+                                df.drop_nulls()
+                                .filter(
+                                    pl.col("ms_played") > 30000
+                                )  # removes songs only played for less than 30 seconds
+                                # spotify does not count streams for songs played for less than 30 seconds
+                                .with_columns(
+                                    [(pl.col("ms_played") / 60000).alias("ms_played")]
+                                )
+                            )
+                            df = df.select(
+                                [
+                                    pl.col("ts").alias("Date"),
+                                    pl.col("ms_played").alias("duration_ms"),
+                                    pl.col("master_metadata_track_name").alias(
+                                        "track_name"
+                                    ),
+                                    pl.col("master_metadata_album_artist_name").alias(
+                                        "artist_name"
+                                    ),
+                                    pl.col("master_metadata_album_album_name").alias(
+                                        "album_name"
+                                    ),
+                                    pl.col("spotify_track_uri").alias("track_uri"),
+                                ]
+                            )
+                            dfs.append(df)
+                except Exception as e:
+                    print(f"Warning: Could not extract/process {json_file_name}: {e}")
+                    continue
+
+        if not dfs:
+            raise ValueError("No valid JSON files could be processed.")
+
+        log_mem("Before concat")
+        combined_df = pl.concat(dfs)
+        log_mem("After concat")
+
+    return combined_df.to_pandas()
 
 
 def prepare_df_for_visual_anims(
@@ -183,21 +141,21 @@ def prepare_df_for_visual_anims(
         # each row is one stream
         if selected_attribute == "artist_name":
             top_values = (
-                df.groupby("artist_name")
+                df.groupby("artist_name", observed=True)
                 .size()
                 .nlargest(filter_number)
                 .reset_index(name="Streams")
             )
         elif selected_attribute == "track_name":
             top_values = (
-                df.groupby(["track_name", "artist_name"])
+                df.groupby(["track_name", "artist_name"], observed=True)
                 .size()
                 .nlargest(filter_number)
                 .reset_index(name="Streams")
             )
         else:
             top_values = (
-                df.groupby(["album_name", "artist_name"])
+                df.groupby(["album_name", "artist_name"], observed=True)
                 .size()
                 .nlargest(filter_number)
                 .reset_index(name="Streams")
@@ -206,21 +164,21 @@ def prepare_df_for_visual_anims(
     elif analysis_metric == "duration_ms":
         if selected_attribute == "artist_name":
             top_values = (
-                df.groupby("artist_name")["duration_ms"]
+                df.groupby("artist_name", observed=True)["duration_ms"]
                 .sum()
                 .nlargest(filter_number)
                 .reset_index()
             )
         elif selected_attribute == "track_name":
             top_values = (
-                df.groupby(["track_name", "artist_name"])["duration_ms"]
+                df.groupby(["track_name", "artist_name"], observed=True)["duration_ms"]
                 .sum()
                 .nlargest(filter_number)
                 .reset_index()
             )
         else:
             top_values = (
-                df.groupby(["album_name", "artist_name"])["duration_ms"]
+                df.groupby(["album_name", "artist_name"], observed=True)["duration_ms"]
                 .sum()
                 .nlargest(filter_number)
                 .reset_index()
@@ -251,15 +209,15 @@ def prepare_df_for_visual_anims(
             subset = df[(df["album_name"] == album) & (df["artist_name"] == artist)]
             if analysis_metric == "duration_ms":
                 df_grouped = (
-                    subset.groupby(["album_name", "artist_name", "Date"])[
-                        analysis_metric
-                    ]
+                    subset.groupby(
+                        ["album_name", "artist_name", "Date"], observed=True
+                    )[analysis_metric]
                     .sum()
                     .reset_index(name=analysis_metric)
                 )
             else:
                 df_grouped = (
-                    subset.groupby(["album_name", "artist_name", "Date"])
+                    subset.groupby(["album_name", "artist_name", "Date"], observed=True)
                     .size()
                     .reset_index(name=analysis_metric)
                 )
@@ -282,15 +240,15 @@ def prepare_df_for_visual_anims(
 
             if analysis_metric == "duration_ms":
                 df_grouped = (
-                    subset.groupby(["track_name", "artist_name", "Date"])[
-                        analysis_metric
-                    ]
+                    subset.groupby(
+                        ["track_name", "artist_name", "Date"], observed=True
+                    )[analysis_metric]
                     .sum()
                     .reset_index(name=analysis_metric)
                 )
             else:
                 df_grouped = (
-                    subset.groupby(["track_name", "artist_name", "Date"])
+                    subset.groupby(["track_name", "artist_name", "Date"], observed=True)
                     .size()
                     .reset_index(name=analysis_metric)
                 )
@@ -319,13 +277,15 @@ def prepare_df_for_visual_anims(
 
             if analysis_metric == "duration_ms":
                 df_grouped = (
-                    subset.groupby(["artist_name", "Date"])[analysis_metric]
+                    subset.groupby(["artist_name", "Date"], observed=True)[
+                        analysis_metric
+                    ]
                     .sum()
                     .reset_index(name=analysis_metric)
                 )
             else:
                 df_grouped = (
-                    subset.groupby(["artist_name", "Date"])
+                    subset.groupby(["artist_name", "Date"], observed=True)
                     .size()
                     .reset_index(name=analysis_metric)
                 )
@@ -374,21 +334,21 @@ def prepare_df_for_visual_plots(
         # each row is one stream
         if selected_attribute == "artist_name":
             top_values = (
-                df.groupby("artist_name")
+                df.groupby("artist_name", observed=True)
                 .size()
                 .nlargest(filter_number)
                 .reset_index(name="Streams")
             )
         elif selected_attribute == "track_name":
             top_values = (
-                df.groupby(["track_name", "artist_name"])
+                df.groupby(["track_name", "artist_name"], observed=True)
                 .size()
                 .nlargest(filter_number)
                 .reset_index(name="Streams")
             )
         else:
             top_values = (
-                df.groupby(["album_name", "artist_name"])
+                df.groupby(["album_name", "artist_name"], observed=True)
                 .size()
                 .nlargest(filter_number)
                 .reset_index(name="Streams")
@@ -397,21 +357,21 @@ def prepare_df_for_visual_plots(
     elif analysis_metric == "duration_ms":
         if selected_attribute == "artist_name":
             top_values = (
-                df.groupby("artist_name")["duration_ms"]
+                df.groupby("artist_name", observed=True)["duration_ms"]
                 .sum()
                 .nlargest(filter_number)
                 .reset_index()
             )
         elif selected_attribute == "track_name":
             top_values = (
-                df.groupby(["track_name", "artist_name"])["duration_ms"]
+                df.groupby(["track_name", "artist_name"], observed=True)["duration_ms"]
                 .sum()
                 .nlargest(filter_number)
                 .reset_index()
             )
         else:
             top_values = (
-                df.groupby(["album_name", "artist_name"])["duration_ms"]
+                df.groupby(["album_name", "artist_name"], observed=True)["duration_ms"]
                 .sum()
                 .nlargest(filter_number)
                 .reset_index()
@@ -437,8 +397,6 @@ def prepare_df_for_visual_plots(
             .isin(top_values_tuples)
         ]
 
-    full_date_range = pd.date_range(start=start_date, end=end_date)
-
     if selected_attribute == "album_name":
         unique_values = df[["album_name", "artist_name"]].drop_duplicates()
     elif selected_attribute == "artist_name":
@@ -452,95 +410,20 @@ def prepare_df_for_visual_plots(
             album = row["album_name"]
             artist = row["artist_name"]
             subset = df[(df["album_name"] == album) & (df["artist_name"] == artist)]
-            if analysis_metric == "duration_ms":
-                df_grouped = (
-                    subset.groupby(["album_name", "artist_name", "Date"])[
-                        analysis_metric
-                    ]
-                    .sum()
-                    .reset_index(name=analysis_metric)
-                )
-            else:
-                df_grouped = (
-                    subset.groupby(["album_name", "artist_name", "Date"])
-                    .size()
-                    .reset_index(name=analysis_metric)
-                )
-
-            df_grouped = (
-                df_grouped.set_index("Date")
-                .reindex(full_date_range, fill_value=0)  # to fill in missing dates
-                .reset_index(names="Date")
-            )
-
-            df_grouped[selected_attribute] = album
-            df_grouped["artist_name"] = artist
             new_df_list.append(subset)
     elif selected_attribute == "track_name":
         for _, row in unique_values.iterrows():
             track = row["track_name"]
             artist = row["artist_name"]
-
             subset = df[(df["track_name"] == track) & (df["artist_name"] == artist)]
-
-            if analysis_metric == "duration_ms":
-                df_grouped = (
-                    subset.groupby(["track_name", "artist_name", "Date"])[
-                        analysis_metric
-                    ]
-                    .sum()
-                    .reset_index(name=analysis_metric)
-                )
-            else:
-                df_grouped = (
-                    subset.groupby(["track_name", "artist_name", "Date"])
-                    .size()
-                    .reset_index(name=analysis_metric)
-                )
-
-            df_grouped = (
-                df_grouped.set_index("Date")
-                .reindex(full_date_range, fill_value=0)
-                .reset_index(names="Date")
-            )
-
-            if selected_attribute == "track_name":
-                df_grouped[selected_attribute] = track
-                df_grouped["artist_name"] = artist
-            elif selected_attribute == "artist_name":
-                df_grouped[selected_attribute] = artist
-            else:
-                df_grouped[selected_attribute] = album
-                df_grouped["artist_name"] = artist
-
             new_df_list.append(subset)
     else:
         selected_attribute = "artist_name"
         for artist in unique_values:
             subset = df[df[selected_attribute] == artist]
-
-            if analysis_metric == "duration_ms":
-                df_grouped = (
-                    subset.groupby(["artist_name", "Date"])[analysis_metric]
-                    .sum()
-                    .reset_index(name=analysis_metric)
-                )
-            else:
-                df_grouped = (
-                    subset.groupby(["artist_name", "Date"])
-                    .size()
-                    .reset_index(name=analysis_metric)
-                )
-
-            df_grouped = (
-                df_grouped.set_index("Date")
-                .reindex(full_date_range, fill_value=0)
-                .reset_index(names="Date")
-            )
-
-            df_grouped[selected_attribute] = artist
             new_df_list.append(subset)
 
     result_df = pd.concat(new_df_list).reset_index(drop=True)
     result_df = result_df.sort_values([selected_attribute, "Date"])
+    return result_df
     return result_df

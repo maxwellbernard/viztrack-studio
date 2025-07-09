@@ -38,15 +38,16 @@ r = redis.from_url(redis_url, decode_responses=False)
 
 
 def log_mem(msg):
-    print(
-        f"{msg} - Memory usage (MB): {psutil.Process(os.getpid()).memory_info().rss / 1024**2:.2f}"
-    )
+    process = psutil.Process(os.getpid())
+    mem_mb = process.memory_info().rss / 1024**2
+    print(f"{msg} - Memory usage: {mem_mb:.2f} MB")
 
 
 def store_session_data(session_id, df):
     """Store DataFrame in Redis with 1-hour expiration."""
     try:
         pickled_df = pickle.dumps(df)
+        print(f"Pickled DataFrame size: {len(pickled_df) / 1024**2:.2f} MB")
         r.setex(session_id, 3600, pickled_df)
         return True
     except Exception as e:
@@ -68,6 +69,7 @@ def get_session_data(session_id):
 
 @app.route("/process", methods=["POST"])
 def process_zip():
+    print("Received /process request")
     log_mem("Start /process")
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
@@ -82,15 +84,7 @@ def process_zip():
             zip_path = os.path.join(tmpdir, "uploaded.zip")
             uploaded_file.save(zip_path)
             log_mem("After file save")
-
-            # json_contents = extract_json_from_zip(zip_path)
-
-            # if not json_contents:
-            #     return jsonify({"error": "No streaming history JSON files found"}), 400
-
-            # df = fetch_and_process_files(json_contents)
             df = extract_and_process_json_from_zip(zip_path)
-
             log_mem("After extract_json_from_zip")
 
             if df.empty:
@@ -118,6 +112,7 @@ def process_zip():
 @app.route("/generate_image", methods=["POST"])
 def generate_image():
     try:
+        log_mem("Start /generate_image")
         # request data
         data = request.get_json()
         session_id = data.get("session_id")
@@ -133,6 +128,7 @@ def generate_image():
         )
 
         df = get_session_data(session_id)
+        log_mem("After get_session_data")
         if df is None:
             return jsonify(
                 {
@@ -149,6 +145,7 @@ def generate_image():
             end_date=end_date,
             top_n=top_n,
         )
+        log_mem("After prepare_df_for_visual_plots")
 
         # Close any existing plots
         plt.close("all")
@@ -166,6 +163,7 @@ def generate_image():
             image_cache=image_cache,
             error_logged=error_logged,
         )
+        log_mem("After plot_final_frame")
 
         buf = BytesIO()
         fig.savefig(buf, format="jpeg", dpi=300, facecolor="#F0F0F0", edgecolor="none")
@@ -183,6 +181,7 @@ def generate_image():
 @app.route("/generate_animation", methods=["POST"])
 def generate_animation():
     try:
+        log_mem("Start /generate_animation")
         data = request.get_json()
         session_id = data.get("session_id")
         selected_attribute = data.get("selected_attribute")
@@ -197,6 +196,7 @@ def generate_animation():
 
         # Get DataFrame from Redis
         df = get_session_data(session_id)
+        log_mem("After get_session_data")
         if df is None:
             return jsonify(
                 {
@@ -212,6 +212,7 @@ def generate_animation():
             end_date=end_date,
             top_n=top_n,
         )
+        log_mem("After prepare_df_for_visual_anims")
 
         anim_bar_plot = create_bar_animation(
             df_anim,
@@ -225,6 +226,7 @@ def generate_animation():
             start_date,
             end_date,
         )
+        log_mem("After create_bar_animation")
 
         # Save animation to a temporary file for download
         import tempfile
@@ -237,6 +239,7 @@ def generate_animation():
                 fps=speed_for_bar_animation,
                 savefig_kwargs={"facecolor": "#F0F0F0"},
             )
+            log_mem("After anim_bar_plot.save (ffmpeg encoding done)")
             temp_file.seek(0)
             video_bytes = temp_file.read()
         video_base64 = base64.b64encode(video_bytes).decode("utf-8")
