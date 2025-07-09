@@ -630,7 +630,7 @@ if uploaded_file and not st.session_state.form_values["data_uploaded"]:
                 st.error("No valid data received from backend")
         else:
             st.error(
-                "Failed to process file. Please make sure you uploaded the correct ZIP file from Spotify."
+                "No valid data found in the uploaded file. Please ensure you uploaded the correct ZIP file from Spotify."
             )
 
     else:
