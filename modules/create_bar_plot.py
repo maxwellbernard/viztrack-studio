@@ -13,7 +13,6 @@ from io import BytesIO
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import requests
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from PIL import Image
@@ -41,13 +40,12 @@ def plot_final_frame(
     error_logged=error_logged,
 ) -> None:
     """Create a static plot of the final frame of the bar chart animation."""
-    # Initialize image_cache and error_logged
     if image_cache is None:
         image_cache = {}
     if error_logged is None:
         error_logged = set()
     # fig setup
-    fig, ax = plt.subplots(figsize=(16, 21.2), dpi=300)
+    fig, ax = plt.subplots(figsize=(16, 21.2), dpi=91)
     fig.patch.set_facecolor("#F0F0F0")  # Light gray
     plt.subplots_adjust(left=0.31, right=0.88, top=0.73, bottom=0.085)
     font_prop_heading, font_path_labels = get_fonts()
@@ -86,175 +84,7 @@ def plot_final_frame(
         selected_attribute
     ]
 
-    df["Date"] = df["Date"].dt.to_period(period)
-    if analysis_metric == "duration_ms":
-        if selected_attribute == "track_name":
-            monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"], observed=True)[analysis_metric]
-                .sum()
-                .reset_index()
-            )
-            track_uri_mapping = df.groupby([selected_attribute, "artist_name"], observed=True)[
-                "track_uri"
-            ].first()
-            monthly_df["track_uri"] = monthly_df.apply(
-                lambda row: track_uri_mapping.get(
-                    (row[selected_attribute], row["artist_name"])
-                ),
-                axis=1,
-            )
-        elif selected_attribute == "album_name":
-            monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"], observed=True)[analysis_metric]
-                .sum()
-                .reset_index()
-            )
-            track_uri_mapping = df.groupby(
-                [selected_attribute, "artist_name"], observed=True
-            )["track_uri"].first()
-            monthly_df["track_uri"] = monthly_df.apply(
-                lambda row: track_uri_mapping.get(
-                    (row[selected_attribute], row["artist_name"])
-                ),
-                axis=1,
-            )
-        else:  # artist_name
-            monthly_df = (
-                df.groupby(["Date", selected_attribute], observed=True)[analysis_metric]
-                .sum()
-                .reset_index()
-            )
-            track_uri_mapping = df.groupby(selected_attribute, observed=True)["track_uri"].first()
-            monthly_df["track_uri"] = monthly_df[selected_attribute].map(
-                track_uri_mapping
-            )
-        monthly_df = monthly_df.sort_values("Date")
-
-        if selected_attribute == "track_name":
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"], observed=True
-            )[analysis_metric].cumsum()
-        elif selected_attribute == "album_name":
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"], observed=True
-            )[analysis_metric].cumsum()
-        else:  # artist_name
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                selected_attribute, observed=True
-            )[analysis_metric].cumsum()
-    elif analysis_metric == "Streams":
-        if selected_attribute == "track_name":
-            monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"], observed=True)
-                .size()
-                .reset_index(name="Streams")
-            )
-            track_uri_mapping = df.groupby([selected_attribute, "artist_name"], observed=True)[
-                "track_uri"
-            ].first()
-            monthly_df["track_uri"] = monthly_df.apply(
-                lambda row: track_uri_mapping.get(
-                    (row[selected_attribute], row["artist_name"])
-                ),
-                axis=1,
-            )
-        elif selected_attribute == "album_name":
-            monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"], observed=True)
-                .size()
-                .reset_index(name="Streams")
-            )
-            track_uri_mapping = df.groupby([selected_attribute, "artist_name"], observed=True)[
-                "track_uri"
-            ].first()
-            monthly_df["track_uri"] = monthly_df.apply(
-                lambda row: track_uri_mapping.get(
-                    (row[selected_attribute], row["artist_name"])
-                ),
-                axis=1,
-            )
-        else:  # artist_name
-            monthly_df = (
-                df.groupby(["Date", selected_attribute], observed=True)
-                .size()
-                .reset_index(name="Streams")
-            )
-            track_uri_mapping = df.groupby(selected_attribute, observed=True)["track_uri"].first()
-            monthly_df["track_uri"] = monthly_df[selected_attribute].map(
-                track_uri_mapping
-            )
-        monthly_df = monthly_df.sort_values("Date")
-
-        if selected_attribute == "track_name":
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"], observed=True
-            )[analysis_metric].cumsum()
-        elif selected_attribute == "album_name":
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"], observed=True
-            )[analysis_metric].cumsum()
-        else:  # artist_name
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                selected_attribute, observed=True
-            )[analysis_metric].cumsum()
-
-    monthly_df["Date"] = monthly_df["Date"].dt.to_timestamp()
-    timestamps = sorted(monthly_df["Date"].unique())
-    start_date = start_date + pd.Timedelta(days=3)
-    timestamps = [
-        ts for ts in timestamps if start_date <= ts <= monthly_df["Date"].max()
-    ]
-    if timestamps[-1] != end_date:
-        if end_date > timestamps[-1]:
-            timestamps.append(end_date)
-        else:
-            timestamps[-1] = end_date
-        timestamps.sort()
-
-    current_time = timestamps[-1]
-    cumulative_df = monthly_df[monthly_df["Date"] <= current_time]
-
-    if selected_attribute == "track_name":
-        current_df = cumulative_df.groupby(
-            [selected_attribute, "artist_name"], as_index=False, observed=True
-        ).agg(
-            {
-                f"Cumulative_{analysis_metric}": "max",
-                "track_uri": "first",
-            }
-        )
-    elif selected_attribute == "album_name":
-        current_df = cumulative_df.groupby(
-            [selected_attribute, "artist_name"], as_index=False, observed=True
-        ).agg(
-            {
-                f"Cumulative_{analysis_metric}": "max",
-                "track_uri": "first",
-            }
-        )
-    else:  # artist_name
-        current_df = cumulative_df.groupby(selected_attribute, as_index=False, observed=True).agg(
-            {
-                f"Cumulative_{analysis_metric}": "max",
-                "track_uri": "first",
-            }
-        )
-        current_df["artist_name"] = current_df[selected_attribute]
-
-    prev_names = current_df[selected_attribute].tolist()
-    current_df["prev_rank"] = (
-        current_df[selected_attribute]
-        .map({name: i for i, name in enumerate(prev_names)})
-        .fillna(top_n)
-    )
-    top_n_df = (
-        current_df.sort_values(
-            [f"Cumulative_{analysis_metric}", "prev_rank"],
-            ascending=[False, True],
-        )
-        .head(top_n)
-        .reset_index(drop=True)
-    )
+    top_n_df = df
     if top_n_df.empty:
         ax.text(
             0.5,
@@ -274,7 +104,8 @@ def plot_final_frame(
     positions = list(range(top_n - 1, -1, -1))  # descending order
 
     for i, row in top_n_df.iterrows():
-        widths[i] = row[f"Cumulative_{analysis_metric}"]
+        # widths[i] = row[f"Cumulative_{analysis_metric}"]
+        widths[i] = row[analysis_metric]
 
         if selected_attribute == "track_name" or selected_attribute == "album_name":
             song_name = "\n".join(textwrap.wrap(row[selected_attribute], width=22))
@@ -338,7 +169,7 @@ def plot_final_frame(
     ax.text(
         0.38,
         1.10,
-        f"{start_date.year} {start_date.strftime('%B')} - {current_time.year} {current_time.strftime('%B')}",
+        f"{start_date.year} {start_date.strftime('%B')} - {end_date.year} {end_date.strftime('%B')}",
         transform=ax.transAxes,
         fontsize=36,
         fontproperties=font_prop_heading,
@@ -401,11 +232,12 @@ def plot_final_frame(
 
         for i, name in enumerate(names):
             current_row = top_n_df.iloc[i]
-            if "track_uri" in current_row and current_row["track_uri"]:
+            if selected_attribute == "album_name":
+                cache_key = f"{name}_album_top_n_{top_n}"
+            elif "track_uri" in current_row and current_row["track_uri"]:
                 cache_key = f"{current_row['track_uri']}_top_n_{top_n}"
             else:
                 cache_key = f"{name}_top_n_{top_n}"
-            cache_keys.append(cache_key)
 
             if cache_key not in image_cache:
                 item_data = {"name": name, "type": item_type, "cache_key": cache_key}
@@ -539,6 +371,7 @@ def plot_final_frame(
         text_y = positions[i]
         max_value = max(display_widths)
         offset = max(0.01, max_value * 0.03)
+        current_row = top_n_df.iloc[i]
 
         # numbers on bar
         text_objects[i] = ax.text(
@@ -596,10 +429,9 @@ def plot_final_frame(
                 color="#A9A9A9",  # grey
             )
 
-        # add image
-        # Use the same cache_key logic as in process_images_with_batch_api
-        current_row = top_n_df.iloc[i]
-        if "track_uri" in current_row and current_row["track_uri"]:
+        if selected_attribute == "album_name":
+            cache_key = f"{name}_album_top_n_{top_n}"
+        elif "track_uri" in current_row and current_row["track_uri"]:
             cache_key = f"{current_row['track_uri']}_top_n_{top_n}"
         else:
             cache_key = f"{name}_top_n_{top_n}"
