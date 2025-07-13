@@ -131,9 +131,7 @@ def track_event(event_type: str, metadata: dict = None, count: int = 1):
 
 def send_file_to_backend(uploaded_file):
     files = {"file": (uploaded_file.name, uploaded_file, uploaded_file.type)}
-    response = requests.post(
-        "https://viztrack-studio-backend.onrender.com/process", files=files
-    )
+    response = requests.post("https://spotify-animation.fly.dev/process", files=files)
     return response
 
 
@@ -149,7 +147,7 @@ def send_image_request_to_backend(
         "end_date": end_date.isoformat(),
     }
     response = requests.post(
-        "https://viztrack-studio-backend.onrender.com/generate_image", json=data
+        "https://spotify-animation.fly.dev/generate_image", json=data
     )
     return response
 
@@ -179,7 +177,7 @@ def send_animation_request_to_backend(
         "period": period,
     }
     response = requests.post(
-        "https://viztrack-studio-backend.onrender.com/generate_animation", json=data
+        "https://spotify-animation.fly.dev/generate_animation", json=data
     )
     return response
 
