@@ -36,7 +36,6 @@ CORS(app)
 UPLOAD_DIR = "/tmp/spotify_sessions"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-
 def log_mem(msg):
     process = psutil.Process(os.getpid())
     mem_mb = process.memory_info().rss / 1024**2
@@ -440,7 +439,3 @@ def generate_animation():
 
     except Exception as e:
         return jsonify({"error": f"Animation generation failed: {str(e)}"}), 500
-
-
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=8000)
