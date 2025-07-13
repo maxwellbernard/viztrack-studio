@@ -7,6 +7,7 @@ import traceback
 import uuid
 import zipfile
 from io import BytesIO
+import traceback
 
 import duckdb
 import matplotlib
@@ -438,4 +439,5 @@ def generate_animation():
         return jsonify({"video": video_base64, "filename": filename}), 200
 
     except Exception as e:
+        print(traceback.format_exc())
         return jsonify({"error": f"Animation generation failed: {str(e)}"}), 500
