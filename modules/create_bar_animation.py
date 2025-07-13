@@ -5,7 +5,6 @@ It includes functions to set up the animation, process data, and handle image fe
 
 import os
 import textwrap
-import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
@@ -35,7 +34,7 @@ warnings.filterwarnings(
 
 days = 30
 dpi = 144
-interp_steps = 14
+interp_steps = 16
 period = "d"
 
 
@@ -47,68 +46,70 @@ def preload_images_batch(
     """
     items_to_fetch = []
     cache_keys = []
-
     for name in names:
-        # cache_key = f"{name}_top_n_{top_n}"
-        matching_rows = monthly_df[monthly_df[selected_attribute] == name]
+        cache_key = f"{name}_top_n_{top_n}"
+        if selected_attribute == "track_name":
+            matching_rows = monthly_df[monthly_df["track_uri"] == name]
+        elif selected_attribute == "artist_name":
+            matching_rows = monthly_df[monthly_df["artist_name"] == name]
+        else:
+            matching_rows = monthly_df[monthly_df[selected_attribute] == name]
         if not matching_rows.empty:
             row = matching_rows.iloc[0]
             if selected_attribute == "album_name":
-                cache_key = f"{name}_album_top_n_{top_n}"
-            elif "track_uri" in row and row["track_uri"]:
-                cache_key = f"{row['track_uri']}_top_n_{top_n}"
-            else:
+                if "track_uri" in row and row["track_uri"]:
+                    cache_key = f"{row['track_uri']}_top_n_{top_n}"
+                else:
+                    cache_key = f"{name}_album_top_n_{top_n}"
+            elif selected_attribute == "track_name":
+                if "track_uri" in row and row["track_uri"]:
+                    cache_key = f"{row['track_uri']}_top_n_{top_n}"
+            elif selected_attribute == "artist_name":
                 cache_key = f"{name}_top_n_{top_n}"
-        else:
-            cache_key = f"{name}_top_n_{top_n}"
 
         cache_keys.append(cache_key)
 
         if cache_key not in image_cache:
-            matching_rows = monthly_df[monthly_df[selected_attribute] == name]
-            if not matching_rows.empty:
-                row = matching_rows.iloc[0]
-                item_data = {"name": name, "type": item_type, "cache_key": cache_key}
-
-                if selected_attribute == "album_name":
+            if selected_attribute == "track_name":
+                if not matching_rows.empty:
+                    row = matching_rows.iloc[0]
+                    item_data = {
+                        "name": name,
+                        "type": "track",
+                        "cache_key": cache_key,
+                        "track_uri": row["track_uri"],
+                    }
+                    items_to_fetch.append(item_data)
+            elif selected_attribute == "album_name":
+                album_name, artist_name = name.split(" - ", 1)
+                matching_rows = monthly_df[
+                    (monthly_df["album_name"] == album_name)
+                    & (monthly_df["artist_name"] == artist_name)
+                ]
+                if not matching_rows.empty:
+                    row = matching_rows.iloc[0]
                     cache_key = f"{name}_album_top_n_{top_n}"
-                    # For albums, use track_uri not album_name
-                    if "track_uri" in row and row["track_uri"]:
-                        item_data["track_uri"] = row[
-                            "track_uri"
-                        ]  # ✅ Use track_uri for albums
-                    else:
-                        item_data["album_name"] = name  # Fallback
-                elif "track_uri" in row and row["track_uri"]:
-                    item_data["track_uri"] = row["track_uri"]
-                else:
-                    if item_type == "artist":
-                        item_data["artist_name"] = name
-                        item_data["search_required"] = True
+                    item_data = {
+                        "name": name,
+                        "type": "album",
+                        "cache_key": cache_key,
+                        "track_uri": row["track_uri"],
+                    }
+                    items_to_fetch.append(item_data)
+            elif selected_attribute == "artist_name":
+                if not matching_rows.empty and name:
+                    row = matching_rows.iloc[0]
+                    item_data = {
+                        "name": name,
+                        "type": "artist",
+                        "cache_key": cache_key,
+                        "track_uri": row["track_uri"],
+                        "artist_name": name,
+                    }
+                    items_to_fetch.append(item_data)
 
-                items_to_fetch.append(item_data)
-
-    # batch API calls
-    if items_to_fetch:
-        batch_items = [
-            item for item in items_to_fetch if not item.get("search_required")
-        ]
-        search_items = [item for item in items_to_fetch if item.get("search_required")]
-        batch_results = {}
-
-        if batch_items:
-            batch_results = fetch_images_batch(batch_items)
-        if search_items:
-            from modules.prepare_visuals import fetch_image
-
-            for item in search_items:
-                try:
-                    image_url = fetch_image(item["name"], "artist")
-                    if image_url:
-                        batch_results[item["name"]] = image_url
-                    time.sleep(0.1)
-                except Exception as e:
-                    print(f"Search failed for {item['name']}: {e}")
+        if items_to_fetch:
+            batch_results = fetch_images_batch(items_to_fetch)
 
         # prepare download tasks
         download_tasks = []
@@ -150,7 +151,6 @@ def preload_images_batch(
                     if future.result():
                         successful_downloads += 1
 
-    # handle already cached items
     for name, cache_key in zip(names, cache_keys):
         if cache_key in image_cache:
             pass
@@ -201,24 +201,34 @@ def precompute_data(
 
         if selected_attribute == "track_name":
             current_df = cumulative_df.groupby(
-                [selected_attribute, "artist_name"], as_index=False
+                ["track_uri"], as_index=False, observed=True
             ).agg(
                 {
                     f"Cumulative_{analysis_metric}": "max",
                     "track_uri": "first",
+                    "artist_name": "first",
+                    "track_name": "first",
                 }
             )
         elif selected_attribute == "album_name":
             current_df = cumulative_df.groupby(
-                [selected_attribute, "artist_name"], as_index=False
+                [selected_attribute, "artist_name"], as_index=False, observed=True
             ).agg(
                 {
                     f"Cumulative_{analysis_metric}": "max",
                     "track_uri": "first",
+                    "artist_name": "first",
+                    "album_name": "first",
                 }
             )
+            current_df["album_artist"] = (
+                current_df["album_name"] + " - " + current_df["artist_name"]
+            )
+            current_df = current_df.drop_duplicates(subset=["album_artist"])
         else:  # artist_name
-            current_df = cumulative_df.groupby(selected_attribute, as_index=False).agg(
+            current_df = cumulative_df.groupby(
+                [selected_attribute], as_index=False, observed=True
+            ).agg(
                 {
                     f"Cumulative_{analysis_metric}": "max",
                     "track_uri": "first",
@@ -226,16 +236,27 @@ def precompute_data(
             )
             current_df["artist_name"] = current_df[selected_attribute]
 
-        prev_names = current_df[selected_attribute].tolist()
-        current_df["prev_rank"] = (
-            current_df[selected_attribute]
-            .map({name: i for i, name in enumerate(prev_names)})
-            .fillna(top_n)
-        )
-        # current_df = current_df.sort_values(
-        #     by=[f"Cumulative_{analysis_metric}"], ascending=False
-        # )
-
+        if selected_attribute == "album_name":
+            prev_names = current_df["album_artist"].tolist()
+            current_df["prev_rank"] = (
+                current_df["album_artist"]
+                .map({name: i for i, name in enumerate(prev_names)})
+                .fillna(top_n)
+            )
+        elif selected_attribute == "track_name":
+            prev_names = current_df["track_uri"].tolist()
+            current_df["prev_rank"] = (
+                current_df["track_uri"]
+                .map({name: i for i, name in enumerate(prev_names)})
+                .fillna(top_n)
+            )
+        else:  # artist_name
+            prev_names = current_df["artist_name"].tolist()
+            current_df["prev_rank"] = (
+                current_df["artist_name"]
+                .map({name: i for i, name in enumerate(prev_names)})
+                .fillna(top_n)
+            )
         top_n_df = (
             current_df.sort_values(
                 [f"Cumulative_{analysis_metric}", "prev_rank"],
@@ -249,17 +270,30 @@ def precompute_data(
         ] + [0] * (top_n - len(top_n_df))
         labels = []
         for _, row in top_n_df.iterrows():
-            if selected_attribute == "track_name" or selected_attribute == "album_name":
-                song_name = "\n".join(textwrap.wrap(row[selected_attribute], width=22))
+            if selected_attribute == "track_name":
+                song_name = "\n".join(textwrap.wrap(str(row["track_name"]), width=22))
                 labels.append(song_name)
+            elif selected_attribute == "album_name":
+                album_name = "\n".join(textwrap.wrap(str(row["album_name"]), width=22))
+                labels.append(album_name)
             else:
                 labels.append(
-                    "\n".join(textwrap.wrap(row[selected_attribute], width=20))
+                    "\n".join(textwrap.wrap(str(row[selected_attribute]), width=20))
                 )
-        # ensure labels are padded to top_n
         labels += [""] * (top_n - len(top_n_df))
-        names = top_n_df[selected_attribute].tolist() + [""] * (top_n - len(top_n_df))
-        artist_names = top_n_df["artist_name"].tolist() + [""] * (top_n - len(top_n_df))
+        if selected_attribute == "track_name":
+            names = top_n_df["track_uri"].tolist() + [""] * (top_n - len(top_n_df))
+            artist_names = top_n_df["artist_name"].tolist() + [""] * (
+                top_n - len(top_n_df)
+            )
+        elif selected_attribute == "album_name":
+            names = top_n_df["album_artist"].tolist() + [""] * (top_n - len(top_n_df))
+            artist_names = top_n_df["artist_name"].tolist() + [""] * (
+                top_n - len(top_n_df)
+            )
+        else:  # artist_name
+            names = top_n_df["artist_name"].tolist() + [""] * (top_n - len(top_n_df))
+            artist_names = [""] * top_n  # No sublabel for artist mode
         precomputed_data[ts] = {
             "widths": widths,
             "labels": labels,
@@ -284,7 +318,7 @@ def create_bar_animation(
     """Prepare the bar chart animation with optimized runtime."""
     # Figure setup
     fig, ax = plt.subplots(figsize=(16, 21.2), dpi=dpi)
-    fig.patch.set_facecolor("#F0F0F0")  # Set background color to light gray
+    fig.patch.set_facecolor("#F0F0F0")  # light gray
     plt.subplots_adjust(left=0.27, right=0.85, top=0.8, bottom=0.13)
     font_prop_heading, font_path_labels = get_fonts()
     title_map = {
@@ -315,125 +349,12 @@ def create_bar_animation(
     image_axes = fig.add_axes([0.38, 0.555, 0.29, 0.59])
     image_axes.imshow(img)
     image_axes.axis("off")
-
     item_type = {"artist_name": "artist", "track_name": "track", "album_name": "album"}[
         selected_attribute
     ]
-
+    df["Date"] = pd.to_datetime(df["Date"])
     df["Date"] = df["Date"].dt.to_period(period)
-    if analysis_metric == "duration_ms":
-        if selected_attribute == "track_name":
-            monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"])[analysis_metric]
-                .sum()
-                .reset_index()
-            )
-            track_uri_mapping = df.groupby([selected_attribute, "artist_name"])[
-                "track_uri"
-            ].first()
-            monthly_df["track_uri"] = monthly_df.apply(
-                lambda row: track_uri_mapping.get(
-                    (row[selected_attribute], row["artist_name"])
-                ),
-                axis=1,
-            )
-        elif selected_attribute == "album_name":
-            monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"])[analysis_metric]
-                .sum()
-                .reset_index()
-            )
-            track_uri_mapping = df.groupby([selected_attribute, "artist_name"])[
-                "track_uri"
-            ].first()
-            monthly_df["track_uri"] = monthly_df.apply(
-                lambda row: track_uri_mapping.get(
-                    (row[selected_attribute], row["artist_name"])
-                ),
-                axis=1,
-            )
-        else:  # artist_name
-            monthly_df = (
-                df.groupby(["Date", selected_attribute])[analysis_metric]
-                .sum()
-                .reset_index()
-            )
-            track_uri_mapping = df.groupby(selected_attribute)["track_uri"].first()
-            monthly_df["track_uri"] = monthly_df[selected_attribute].map(
-                track_uri_mapping
-            )
-
-        monthly_df = monthly_df.sort_values("Date")
-
-        if selected_attribute == "track_name":
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"]
-            )[analysis_metric].cumsum()
-        elif selected_attribute == "album_name":
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"]
-            )[analysis_metric].cumsum()
-        else:  # artist_name
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                selected_attribute
-            )[analysis_metric].cumsum()
-
-    elif analysis_metric == "Streams":
-        if selected_attribute == "track_name":
-            monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"])
-                .size()
-                .reset_index(name="Streams")
-            )
-            track_uri_mapping = df.groupby([selected_attribute, "artist_name"])[
-                "track_uri"
-            ].first()
-            monthly_df["track_uri"] = monthly_df.apply(
-                lambda row: track_uri_mapping.get(
-                    (row[selected_attribute], row["artist_name"])
-                ),
-                axis=1,
-            )
-        elif selected_attribute == "album_name":
-            monthly_df = (
-                df.groupby(["Date", selected_attribute, "artist_name"])
-                .size()
-                .reset_index(name="Streams")
-            )
-            track_uri_mapping = df.groupby([selected_attribute, "artist_name"])[
-                "track_uri"
-            ].first()
-            monthly_df["track_uri"] = monthly_df.apply(
-                lambda row: track_uri_mapping.get(
-                    (row[selected_attribute], row["artist_name"])
-                ),
-                axis=1,
-            )
-        else:  # artist_name
-            monthly_df = (
-                df.groupby(["Date", selected_attribute])
-                .size()
-                .reset_index(name="Streams")
-            )
-            track_uri_mapping = df.groupby(selected_attribute)["track_uri"].first()
-            monthly_df["track_uri"] = monthly_df[selected_attribute].map(
-                track_uri_mapping
-            )
-
-        monthly_df = monthly_df.sort_values("Date")
-
-        if selected_attribute == "track_name":
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"]
-            )[analysis_metric].cumsum()
-        elif selected_attribute == "album_name":
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                [selected_attribute, "artist_name"]
-            )[analysis_metric].cumsum()
-        else:  # artist_name
-            monthly_df[f"Cumulative_{analysis_metric}"] = monthly_df.groupby(
-                selected_attribute
-            )[analysis_metric].cumsum()
+    monthly_df = df
 
     # Precompute data to avoid per-frame aggregation for efficiency
     timestamps, precomputed_data = precompute_data(
@@ -474,7 +395,14 @@ def create_bar_animation(
     target_size = int(bar_height * scale_factor)
 
     # Batch preload images
-    all_names = monthly_df[selected_attribute].unique()
+    if selected_attribute == "track_name":
+        all_names = monthly_df["track_uri"].unique()
+    elif selected_attribute == "album_name":
+        all_names = (
+            monthly_df["album_name"] + " - " + monthly_df["artist_name"]
+        ).unique()
+    else:
+        all_names = monthly_df[selected_attribute].unique()
     preload_images_batch(
         all_names, monthly_df, selected_attribute, item_type, top_n, target_size
     )
@@ -512,8 +440,8 @@ def create_bar_animation(
         ax.set_ylim(4.5 - bottom_gap - bar_height / 2, 4.5 + top_gap + bar_height / 2)
     else:
         positions = [8.9 - i * (8.6 / (top_n - 1)) for i in range(top_n)]
-        top_pos = max(positions)  # 8.9
-        bottom_pos = min(positions)  # 0.3
+        top_pos = max(positions)
+        bottom_pos = min(positions)
         ax.set_ylim(
             bottom_pos - bottom_gap - bar_height / 2, top_pos + top_gap + bar_height / 2
         )
@@ -624,13 +552,32 @@ def create_bar_animation(
     initial_widths = initial_top_sorted[f"Cumulative_{analysis_metric}"].tolist() + [
         0
     ] * (top_n - len(initial_top_sorted))
-    initial_labels = [
-        "\n".join(textwrap.wrap(row[selected_attribute], width=20))
-        for _, row in initial_top_sorted.iterrows()
-    ] + [""] * (top_n - len(initial_top_sorted))
-    initial_names = initial_top_sorted[selected_attribute].tolist() + [""] * (
-        top_n - len(initial_top_sorted)
-    )
+
+    if selected_attribute == "track_name":
+        initial_labels = [
+            "\n".join(textwrap.wrap(row["track_name"], width=22))
+            for _, row in initial_top_sorted.iterrows()
+        ] + [""] * (top_n - len(initial_top_sorted))
+        initial_names = initial_top_sorted["track_uri"].tolist() + [""] * (
+            top_n - len(initial_top_sorted)
+        )
+    elif selected_attribute == "album_name":
+        initial_labels = [
+            "\n".join(textwrap.wrap(row["album_name"], width=22))
+            for _, row in initial_top_sorted.iterrows()
+        ] + [""] * (top_n - len(initial_top_sorted))
+        initial_names = initial_top_sorted["album_name"].tolist() + [""] * (
+            top_n - len(initial_top_sorted)
+        )
+    else:  # artist_name
+        initial_labels = [
+            "\n".join(textwrap.wrap(row["artist_name"], width=20))
+            for _, row in initial_top_sorted.iterrows()
+        ] + [""] * (top_n - len(initial_top_sorted))
+        initial_names = initial_top_sorted["artist_name"].tolist() + [""] * (
+            top_n - len(initial_top_sorted)
+        )
+
     anim_state = AnimationState(top_n)
     anim_state.prev_labels = initial_labels[:]
     anim_state.prev_widths = [0] * top_n
@@ -866,15 +813,10 @@ def create_bar_animation(
 
                 if selected_attribute == "album_name":
                     cache_key = f"{name}_album_top_n_{top_n}"
-                elif selected_attribute == "track_name" and i < len(names):
-                    current_frame_data = monthly_df[monthly_df["Date"] <= current_time]
-                    matching_rows = current_frame_data[
-                        current_frame_data[selected_attribute] == name
-                    ]
-                    if not matching_rows.empty:
-                        row = matching_rows.iloc[-1]
-                        if "track_uri" in row and row["track_uri"]:
-                            cache_key = f"{row['track_uri']}_top_n_{top_n}"
+
+                elif selected_attribute == "artist_name":
+                    cache_key = f"{name}_top_n_{top_n}"
+
                 img_data = image_cache.get(cache_key)
 
                 if img_data and text_x > 0 and name:

@@ -11,13 +11,12 @@ from typing import Dict, List
 
 import matplotlib.pyplot as plt
 import spotipy
-import streamlit as st
 from colorthief import ColorThief
 from matplotlib.font_manager import FontProperties
 from PIL import Image
 from spotipy.oauth2 import SpotifyClientCredentials
 
-# global caches and eror tracking
+# global caches and error tracking
 color_cache = {}
 image_cache = {}
 error_logged = set()
@@ -78,8 +77,6 @@ def _fetch_artists_from_tracks_batch(artist_items: List[Dict]) -> Dict[str, str]
     Step 2: Get artist info (batch) then extract images
     """
     image_urls = {}
-    tracks_api_calls = 0
-    artists_api_calls = 0
 
     # we only have artist_name from metadata, so we need to get the artist_id from the
     # track_uri to be able to process the artist images in batches.
@@ -93,7 +90,7 @@ def _fetch_artists_from_tracks_batch(artist_items: List[Dict]) -> Dict[str, str]
         track_uri = item["track_uri"]
         track_id = track_uri.split(":")[-1] if ":" in track_uri else track_uri
         track_ids.append(track_id)
-        uri_to_name[track_uri] = item["name"]  # store the artist name by track URI
+        uri_to_name[track_uri] = item["name"]  # store the artist name by track_uri
 
     # batch fetch track information
     artist_id_to_name = {}
@@ -105,7 +102,6 @@ def _fetch_artists_from_tracks_batch(artist_items: List[Dict]) -> Dict[str, str]
 
         try:
             tracks_response = sp.tracks(batch_track_ids)
-            tracks_api_calls += 1
 
             for j, track in enumerate(tracks_response["tracks"]):
                 if track and track.get("artists"):
@@ -134,7 +130,6 @@ def _fetch_artists_from_tracks_batch(artist_items: List[Dict]) -> Dict[str, str]
 
             try:
                 artists_response = sp.artists(batch_artist_ids)
-                artists_api_calls += 1
 
                 for artist in artists_response["artists"]:
                     if artist and artist.get("images"):
@@ -196,58 +191,6 @@ def _fetch_albums_batch(album_ids: List[str]) -> Dict[str, str]:
     return image_urls
 
 
-def fetch_image(
-    item_name: str, item_type: str, artist_name: str = None, track_uri: str = None
-) -> str:
-    """Fetches the image using track_uri for tracks/albums, or search for artists."""
-    try:
-        if item_type == "artist":
-            result = sp.search(q=f"artist:{item_name}", type="artist", limit=1)
-            if result["artists"]["items"]:
-                images = result["artists"]["items"][0].get("images", [])
-                return images[0]["url"] if images else None
-
-        elif item_type in ["track"] and track_uri:
-            try:
-                track = sp.track(track_uri)
-                return (
-                    track["album"]["images"][0]["url"]
-                    if track["album"].get("images")
-                    else None
-                )
-            except spotipy.exceptions.SpotifyException as e:
-                if e.http_status == 429:  # Rate limit error
-                    retry_after = int(e.headers.get("Retry-After", 5))
-                    print(f"Rate limit hit. Retrying after {retry_after} seconds...")
-                    print(
-                        f"Spotify Rate Limit: Retrying after {retry_after} seconds..."
-                    )
-                    time.sleep(retry_after)
-                    return fetch_image(item_name, item_type, artist_name, track_uri)
-                print(f"Spotify API error: {e}")
-                return None
-
-        elif item_type == "album":
-            query = f"album:{item_name}" + (
-                f" artist:{artist_name}" if artist_name else ""
-            )
-            result = sp.search(q=query, type="album", limit=1)
-            if result["albums"]["items"]:
-                images = result["albums"]["items"][0].get("images", [])
-                return images[0]["url"] if images else None
-
-        return None
-
-    except (KeyError, IndexError) as e:
-        print(f"Data error fetching image for {item_name} ({item_type}): {str(e)}")
-        return None
-    except Exception as e:
-        print(
-            f"Unexpected error fetching image for {item_name} ({item_type}): {str(e)}"
-        )
-        return None
-
-
 def get_dominant_color(img: Image, img_name: str) -> tuple:
     """
     Extracts a vibrant dominant color from an image using ColorThief, avoiding greys.
@@ -291,8 +234,7 @@ def get_fonts() -> tuple:
     """
     font_path_heading = os.path.join(os.getcwd(), "fonts", "Montserrat-Bold.ttf")
     font_path_labels = os.path.join(os.getcwd(), "fonts", "Montserrat-SemiBold.ttf")
-    fredoka_path = os.path.join(os.getcwd(), "fonts", "Fredoka-Regular.ttf")
-
+    # fredoka_path = os.path.join(os.getcwd(), "fonts", "Fredoka-Regular.ttf")
 
     font_prop_heading = FontProperties(
         family="sans-serif",

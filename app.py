@@ -597,41 +597,25 @@ if uploaded_file and not st.session_state.form_values["data_uploaded"]:
 
     if response.status_code == 200:
         try:
-            # json_data = response.json()
             response_data = response.json()
-            json_data = response_data["data"]
             session_id = response_data["session_id"]
-            df = pd.DataFrame(json_data)
-            if "Date" in df.columns:
-                df["Date"] = pd.to_datetime(df["Date"])
+            start_date_file = pd.to_datetime(response_data["data_min_date"])
+            end_date_file = pd.to_datetime(response_data["data_max_date"])
 
+            st.session_state.session_id = session_id
+            st.session_state.form_values.update(
+                {
+                    "start_date": start_date_file,
+                    "end_date": end_date_file,
+                    "data_min_date": start_date_file,
+                    "data_max_date": end_date_file,
+                    "data_uploaded": True,
+                }
+            )
+            st.success("Data uploaded successfully! 🎉")
+            st.rerun()
         except Exception as e:
             st.error(f"Error parsing response: {str(e)}")
-            df = None
-
-        if df is not None and not df.empty and "Date" in df.columns:
-            if not st.session_state.form_values["data_uploaded"]:
-                start_date_file = df["Date"].min()
-                end_date_file = df["Date"].max()
-
-                st.session_state.form_values.update(
-                    {
-                        "start_date": start_date_file,
-                        "end_date": end_date_file,
-                        "data_min_date": start_date_file,
-                        "data_max_date": end_date_file,
-                        "data_uploaded": True,
-                    }
-                )
-                st.session_state.df = df
-                st.session_state.session_id = session_id
-                st.rerun()
-            else:
-                st.error("No valid data received from backend")
-        else:
-            st.error(
-                "No valid data found in the uploaded file. Please ensure you uploaded the correct ZIP file from Spotify."
-            )
 
     else:
         st.error(
@@ -639,7 +623,6 @@ if uploaded_file and not st.session_state.form_values["data_uploaded"]:
         )
 elif uploaded_file and st.session_state.form_values["data_uploaded"]:
     st.success("Data uploaded successfully! 🎉")
-    df = st.session_state.df
 
 else:
     st.warning("Please upload your Spotify ZIP file to proceed.")

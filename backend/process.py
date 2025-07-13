@@ -1,13 +1,17 @@
 import base64
+import json
 import os
-import pickle
 import tempfile
+import time
 import traceback
+import uuid
+import zipfile
 from io import BytesIO
 
+import duckdb
 import matplotlib
+import polars as pl
 import psutil
-import redis
 from flask import Flask, jsonify, request
 
 matplotlib.use("Agg")
@@ -16,25 +20,21 @@ import sys
 # Ensure the modules directory is in the Python path for backend deployment
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+
 import matplotlib.pyplot as plt
 import pandas as pd
 from flask_cors import CORS
 
 from modules.create_bar_animation import create_bar_animation, dpi
 from modules.create_bar_plot import plot_final_frame
-from modules.data_processing import (  # extract_json_from_zip,; fetch_and_process_files,
-    extract_and_process_json_from_zip,
-    prepare_df_for_visual_anims,
-    prepare_df_for_visual_plots,
-)
 from modules.normalize_inputs import normalize_inputs
 from modules.prepare_visuals import error_logged, image_cache
 
 app = Flask(__name__)
 CORS(app)
 
-redis_url = os.environ.get("REDIS_URL")
-r = redis.from_url(redis_url, decode_responses=False)
+UPLOAD_DIR = "/tmp/spotify_sessions"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 def log_mem(msg):
@@ -43,32 +43,87 @@ def log_mem(msg):
     print(f"{msg} - Memory usage: {mem_mb:.2f} MB")
 
 
-def store_session_data(session_id, df):
-    """Store DataFrame in Redis with 1-hour expiration."""
-    try:
-        pickled_df = pickle.dumps(df)
-        print(f"Pickled DataFrame size: {len(pickled_df) / 1024**2:.2f} MB")
-        r.setex(session_id, 3600, pickled_df)
-        return True
-    except Exception as e:
-        print(f"Redis store error: {e}")
-        return False
+def cleanup_old_sessions(upload_dir=UPLOAD_DIR, max_age_seconds=2700):
+    """Remove files older than 45min from the upload directory."""
+    now = time.time()
+    for fname in os.listdir(upload_dir):
+        fpath = os.path.join(upload_dir, fname)
+        if os.path.isfile(fpath) and (now - os.path.getmtime(fpath)) > max_age_seconds:
+            os.remove(fpath)
 
 
-def get_session_data(session_id):
-    """Retrieve DataFrame from Redis."""
-    try:
-        pickled_df = r.get(session_id)
-        if pickled_df:
-            return pickle.loads(pickled_df)
-        return None
-    except Exception as e:
-        print(f"Redis get error: {e}")
-        return None
+def insert_jsons_from_zip_to_duckdb(zip_path, session_id=None):
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    db_path = os.path.join(UPLOAD_DIR, f"spotify_session_{session_id}.duckdb")
+    con = duckdb.connect(db_path)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS spotify_data (
+            Date TIMESTAMP,
+            duration_ms BIGINT,
+            track_name VARCHAR,
+            artist_name VARCHAR,
+            album_name VARCHAR,
+            track_uri VARCHAR
+        )
+    """)
+
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        file_list = zip_ref.namelist()
+        json_file_names = [
+            filename
+            for filename in file_list
+            if filename.endswith(".json")
+            and "Audio" in filename
+            and not filename.endswith("/")
+        ]
+        for json_file_name in json_file_names:
+            try:
+                with zip_ref.open(json_file_name) as json_file:
+                    json_content = json_file.read()
+                    json_data = json.loads(json_content.decode("utf-8"))
+                    if json_data:
+                        filtered_data = [
+                            {
+                                "Date": row.get("ts"),
+                                "duration_ms": row.get("ms_played") / 60000
+                                if row.get("ms_played")
+                                else None,
+                                "track_name": row.get("master_metadata_track_name"),
+                                "artist_name": row.get(
+                                    "master_metadata_album_artist_name"
+                                ),
+                                "album_name": row.get(
+                                    "master_metadata_album_album_name"
+                                ),
+                                "track_uri": row.get("spotify_track_uri"),
+                            }
+                            for row in json_data
+                            if row.get("ms_played", 0) > 30000
+                        ]
+                        if filtered_data:
+                            df = pl.DataFrame(filtered_data)
+                            # Convert Date to datetime
+                            df = df.with_columns(
+                                pl.col("Date").str.strptime(
+                                    pl.Datetime, "%Y-%m-%dT%H:%M:%SZ", strict=False
+                                )
+                            )
+                            df = df.drop_nulls()
+                            con.execute("INSERT INTO spotify_data SELECT * FROM df")
+            except Exception as e:
+                print(f"Warning: Could not process {json_file_name}: {e}")
+                continue
+
+    min_date = con.execute("SELECT MIN(Date) FROM spotify_data").fetchone()[0]
+    max_date = con.execute("SELECT MAX(Date) FROM spotify_data").fetchone()[0]
+    con.close()
+    return session_id, min_date, max_date
 
 
 @app.route("/process", methods=["POST"])
 def process_zip():
+    cleanup_old_sessions()
     print("Received /process request")
     log_mem("Start /process")
     if "file" not in request.files:
@@ -84,24 +139,15 @@ def process_zip():
             zip_path = os.path.join(tmpdir, "uploaded.zip")
             uploaded_file.save(zip_path)
             log_mem("After file save")
-            df = extract_and_process_json_from_zip(zip_path)
-            log_mem("After extract_json_from_zip")
-
-            if df.empty:
-                return jsonify({"error": "No data processed from files"}), 400
-            # Store the DataFrame for later use
-            session_id = f"session_{hash(str(df.iloc[0].to_dict()))}"
-            if store_session_data(session_id, df):
-                response_data = {
-                    "data": df.to_dict(orient="records"),
-                    "session_id": session_id,
-                }
-                log_mem("After store_session_data")
-                return jsonify(response_data), 200
-            else:
-                return jsonify({"error": "Failed to store session data"}), 500
-
-        return jsonify(response_data), 200
+            session_id, start_date_file, end_date_file = (
+                insert_jsons_from_zip_to_duckdb(zip_path)
+            )
+            response_data = {
+                "session_id": session_id,
+                "data_min_date": str(start_date_file),
+                "data_max_date": str(end_date_file),
+            }
+            return jsonify(response_data), 200
 
     except Exception as e:
         log_mem(f"Exception: {str(e)}")
@@ -109,11 +155,176 @@ def process_zip():
         return jsonify({"error": f"Processing failed: {str(e)}"}), 500
 
 
+def query_user_duckdb(
+    session_id, selected_attribute, analysis_metric, start_date, end_date, top_n
+):
+    db_path = os.path.join(UPLOAD_DIR, f"spotify_session_{session_id}.duckdb")
+    if not os.path.exists(db_path):
+        return None
+    metric_expr = (
+        "COUNT(*) as Streams"
+        if analysis_metric == "Streams"
+        else "SUM(duration_ms) as duration_ms"
+    )
+    order_by = "Streams" if analysis_metric == "Streams" else "duration_ms"
+
+    if selected_attribute == "artist_name":
+        select_cols = "artist_name, MIN(track_uri) as track_uri"
+        group_by = "artist_name"
+    elif selected_attribute == "track_name":
+        select_cols = "track_name, artist_name, track_uri"
+        group_by = "track_name, artist_name, track_uri"
+    elif selected_attribute == "album_name":
+        select_cols = "album_name, artist_name, MIN(track_uri) as track_uri"
+        group_by = "album_name, artist_name"
+    else:
+        select_cols = f"{selected_attribute}, MIN(track_uri) as track_uri"
+        group_by = selected_attribute
+
+    end_date_inclusive = (pd.to_datetime(end_date) + pd.Timedelta(days=1)).strftime(
+        "%Y-%m-%d"
+    )
+    query = f"""
+        SELECT {select_cols}, {metric_expr}
+        FROM spotify_data
+        WHERE Date >= '{start_date}' AND Date < '{end_date_inclusive}'
+        GROUP BY {group_by}
+        ORDER BY {order_by} DESC
+        LIMIT {top_n}
+    """
+    con = duckdb.connect(db_path)
+    result_df = con.execute(query).df()
+    con.close()
+    return result_df
+
+
+def query_user_duckdb_for_animation(
+    session_id,
+    selected_attribute,
+    analysis_metric,
+    start_date,
+    end_date,
+    filter_number=100,
+):
+    db_path = os.path.join(UPLOAD_DIR, f"spotify_session_{session_id}.duckdb")
+    if not os.path.exists(db_path):
+        return None
+
+    if analysis_metric == "Streams":
+        metric_expr = "COUNT(*) as Streams"
+        cumsum_expr = "SUM(COUNT(*)) OVER (PARTITION BY {group_by} ORDER BY Date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as Cumulative_Streams"
+        order_by = "Streams"
+    elif analysis_metric == "duration_ms":
+        metric_expr = "SUM(duration_ms) as duration_ms"
+        cumsum_expr = "SUM(SUM(duration_ms)) OVER (PARTITION BY {group_by} ORDER BY Date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as Cumulative_duration_ms"
+        order_by = "duration_ms"
+
+    end_date_inclusive = (pd.to_datetime(end_date) + pd.Timedelta(days=1)).strftime(
+        "%Y-%m-%d"
+    )
+
+    con = duckdb.connect(db_path)
+
+    if selected_attribute == "artist_name":
+        top_entities_query = f"""
+            SELECT artist_name, COUNT(*) as Streams, SUM(duration_ms) as duration_ms
+            FROM spotify_data
+            WHERE Date >= '{start_date}' AND Date < '{end_date_inclusive}'
+            GROUP BY artist_name
+            ORDER BY {order_by} DESC
+            LIMIT {filter_number}
+        """
+        top_entities = [row[0] for row in con.execute(top_entities_query).fetchall()]
+        group_by = "artist_name"
+        query = f"""
+            SELECT
+                artist_name,
+                Date,
+                MIN(track_uri) as track_uri,
+                {metric_expr},
+                {cumsum_expr.format(group_by=group_by)}
+            FROM spotify_data
+            WHERE Date >= '{start_date}' AND Date < '{end_date_inclusive}'
+            AND artist_name IN ({",".join(["?"] * len(top_entities))})
+            GROUP BY artist_name, Date
+            ORDER BY artist_name, Date
+        """
+        result_df = con.execute(query, top_entities).df()
+
+    elif selected_attribute == "track_name":
+        top_entities_query = f"""
+            SELECT track_uri, COUNT(*) as Streams, SUM(duration_ms) as duration_ms
+            FROM spotify_data
+            WHERE Date >= '{start_date}' AND Date < '{end_date_inclusive}'
+            GROUP BY track_uri
+            ORDER BY {order_by} DESC
+            LIMIT {filter_number}
+        """
+        top_entities = [row[0] for row in con.execute(top_entities_query).fetchall()]
+        group_by = "track_uri"
+        query = f"""
+            SELECT
+                track_name,
+                artist_name,
+                Date,
+                MIN(track_uri) as track_uri,
+                {metric_expr},
+                {cumsum_expr.format(group_by=group_by)}
+            FROM spotify_data
+            WHERE Date >= '{start_date}' AND Date < '{end_date_inclusive}'
+            AND track_uri IN ({",".join(["?"] * len(top_entities))})
+            GROUP BY track_name, track_uri, artist_name, Date
+            ORDER BY track_name, Date
+        """
+        result_df = con.execute(query, top_entities).df()
+
+    elif selected_attribute == "album_name":
+        top_entities_query = f"""
+            SELECT album_name, artist_name, COUNT(*) as Streams, SUM(duration_ms) as duration_ms
+            FROM spotify_data
+            WHERE Date >= '{start_date}' AND Date < '{end_date_inclusive}'
+            GROUP BY album_name, artist_name
+            ORDER BY {order_by} DESC
+            LIMIT {filter_number}
+        """
+        top_entities = [
+            (row[0], row[1]) for row in con.execute(top_entities_query).fetchall()
+        ]
+        group_by = "album_name"
+        query = f"""
+            SELECT
+                album_name,
+                artist_name,
+                Date,
+                MIN(track_uri) as track_uri,
+                {metric_expr},
+                {cumsum_expr.format(group_by=group_by)}
+            FROM spotify_data
+            WHERE Date >= '{start_date}' AND Date < '{end_date_inclusive}'
+            GROUP BY album_name, track_uri, artist_name, Date
+            ORDER BY album_name, Date
+        """
+        result_df = con.execute(query).df()
+
+    con.close()
+    if selected_attribute == "album_name":
+        top_entities_set = set(top_entities)
+        result_df = result_df[
+            result_df.apply(
+                lambda row: (row["album_name"], row["artist_name"]) in top_entities_set,
+                axis=1,
+            )
+        ]
+    else:
+        pass
+    return result_df
+
+
 @app.route("/generate_image", methods=["POST"])
 def generate_image():
+    cleanup_old_sessions()
     try:
         log_mem("Start /generate_image")
-        # request data
         data = request.get_json()
         session_id = data.get("session_id")
         selected_attribute = data.get("selected_attribute")
@@ -127,32 +338,21 @@ def generate_image():
             selected_attribute, analysis_metric
         )
 
-        df = get_session_data(session_id)
-        log_mem("After get_session_data")
-        if df is None:
+        df = query_user_duckdb(
+            session_id, selected_attribute, analysis_metric, start_date, end_date, top_n
+        )
+        log_mem("After query_user_duckdb")
+        if df is None or df.empty:
             return jsonify(
                 {
-                    "error": "Session not found or expired. Please upload your data again."
+                    "error": "Session not found, expired, or no data for selection. Please upload your data again."
                 }
             ), 400
-
-        # Prepare data for visualization
-        df_plot = prepare_df_for_visual_plots(
-            df,
-            selected_attribute=selected_attribute,
-            analysis_metric=analysis_metric,
-            start_date=start_date,
-            end_date=end_date,
-            top_n=top_n,
-        )
         log_mem("After prepare_df_for_visual_plots")
 
-        # Close any existing plots
         plt.close("all")
-
-        # Generate the plot
         fig = plot_final_frame(
-            df=df_plot,
+            df=df,
             top_n=top_n,
             analysis_metric=analysis_metric,
             selected_attribute=selected_attribute,
@@ -166,12 +366,11 @@ def generate_image():
         log_mem("After plot_final_frame")
 
         buf = BytesIO()
-        fig.savefig(buf, format="jpeg", dpi=300, facecolor="#F0F0F0", edgecolor="none")
+        fig.savefig(buf, format="jpeg", dpi=91, facecolor="#F0F0F0", edgecolor="none")
         buf.seek(0)
         image_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
         plt.close(fig)
         filename = f"{selected_attribute}_{analysis_metric}_visual.jpg"
-
         return jsonify({"image": image_base64, "filename": filename}), 200
 
     except Exception as e:
@@ -194,28 +393,21 @@ def generate_animation():
         interp_steps = data.get("interp_steps", 14)
         period = data.get("period", "d")
 
-        # Get DataFrame from Redis
-        df = get_session_data(session_id)
-        log_mem("After get_session_data")
+        df = query_user_duckdb_for_animation(
+            session_id, selected_attribute, analysis_metric, start_date, end_date
+        )
+        print(f"Query result for animation: {df.head(10)}")
+        log_mem("After query_user_duckdb_for_animation")
         if df is None:
             return jsonify(
                 {
                     "error": "Session not found or expired. Please upload your data again."
                 }
             ), 400
-
-        df_anim = prepare_df_for_visual_anims(
-            df,
-            selected_attribute=selected_attribute,
-            analysis_metric=analysis_metric,
-            start_date=start_date,
-            end_date=end_date,
-            top_n=top_n,
-        )
         log_mem("After prepare_df_for_visual_anims")
 
         anim_bar_plot = create_bar_animation(
-            df_anim,
+            df,
             top_n,
             analysis_metric,
             selected_attribute,
@@ -244,8 +436,11 @@ def generate_animation():
             video_bytes = temp_file.read()
         video_base64 = base64.b64encode(video_bytes).decode("utf-8")
         filename = f"{selected_attribute}_{analysis_metric}_animation.mp4"
-
         return jsonify({"video": video_base64, "filename": filename}), 200
 
     except Exception as e:
         return jsonify({"error": f"Animation generation failed: {str(e)}"}), 500
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=8000)
