@@ -240,7 +240,7 @@ def query_user_duckdb_for_animation(
             SELECT
                 artist_name,
                 Date,
-                MIN(track_uri) as track_uri,
+                regexp_extract(MIN(track_uri), '[^:]+$', 0) as track_uri,
                 {metric_expr},
                 {cumsum_expr.format(group_by=group_by)}
             FROM spotify_data
@@ -393,7 +393,7 @@ def generate_animation():
         days = data.get("days", 30)
         interp_steps = data.get("interp_steps", 14)
         period = data.get("period", "d")
-        dpi = data.get("dpi", 91)
+        dpi = data.get("dpi", 10)
         figsize = data.get("figsize", (16, 21.2))
 
         t1 = time.time()
@@ -441,7 +441,7 @@ def generate_animation():
                 writer="ffmpeg",
                 fps=speed_for_bar_animation,
                 savefig_kwargs={"facecolor": "#F0F0F0"},
-                # extra_args=['-preset', 'ultrafast', '-crf', '28']
+                # extra_args=['-preset', 'fast']
             )
             log_mem("After anim_bar_plot.save (ffmpeg encoding done)")
             temp_file.seek(0)
@@ -458,5 +458,4 @@ def generate_animation():
 
 
 # if __name__ == "__main__":
-#     app.run(host="0.0.0.0", port=8080, debug=True)
 #     app.run(host="0.0.0.0", port=8080, debug=True)
