@@ -24,6 +24,8 @@ import base64
 import tempfile
 import uuid
 from datetime import datetime, timezone
+import time
+import os
 
 import pandas as pd
 import requests
@@ -32,6 +34,33 @@ import streamlit as st
 from modules.create_bar_animation import days, dpi, figsize, interp_steps, period
 from modules.normalize_inputs import normalize_inputs
 from modules.supabase_client import supabase
+
+
+# restrict number of concurrent sessions to prevent server overload
+LOCK_FILE = "/tmp/spotify_app_session.lock"
+
+def acquire_lock():
+    if os.path.exists(LOCK_FILE):
+        return False
+    with open(LOCK_FILE, "w") as f:
+        f.write(str(time.time()))
+    return True
+
+def release_lock():
+    if os.path.exists(LOCK_FILE):
+        os.remove(LOCK_FILE)
+
+if "lock_acquired" not in st.session_state:
+    st.session_state.lock_acquired = acquire_lock()
+
+if not st.session_state.lock_acquired:
+    st.error("This app is already open in another tab or browser window. Please close other tabs and refresh.")
+    st.stop()
+
+def on_session_end():
+    release_lock()
+
+st.on_event("shutdown", on_session_end)
 
 st.set_page_config(
     page_title="Viztrack Studio",
