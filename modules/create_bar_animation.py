@@ -956,9 +956,9 @@ def create_bar_animation(
         month_text.set_text(f"{current_time.strftime('%B')}")
         t_text = time.time()
 
-        # print(
-        #     f"[TIMING] frame={frame} data={t_data - t_start:.4f}s pos={t_positions - t_data:.4f}s map={t_mapping - t_positions:.4f}s interp={t_interp - t_mapping:.4f}s bars={t_bars - t_interp:.4f}s bar_draw={t_bar_draw - t_bars:.4f}s label_font={t_label_font - t_bar_draw:.4f}s images={t_images - t_label_font:.4f}s state={t_state - t_images:.4f}s axes={t_axes - t_state:.4f}s text={t_text - t_axes:.4f}s total={t_text - t_start:.4f}s"
-        # )
+        print(
+            f"[TIMING] frame={frame} data={t_data - t_start:.4f}s pos={t_positions - t_data:.4f}s map={t_mapping - t_positions:.4f}s interp={t_interp - t_mapping:.4f}s bars={t_bars - t_interp:.4f}s bar_draw={t_bar_draw - t_bars:.4f}s label_font={t_label_font - t_bar_draw:.4f}s images={t_images - t_label_font:.4f}s state={t_state - t_images:.4f}s axes={t_axes - t_state:.4f}s text={t_text - t_axes:.4f}s total={t_text - t_start:.4f}s"
+        )
 
     t7 = time.time()
     print(f"Time for animation setup: {t7 - t6:.2f} seconds")
