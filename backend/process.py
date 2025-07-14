@@ -36,6 +36,7 @@ CORS(app)
 
 UPLOAD_DIR = "/tmp/spotify_sessions"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+MAX_SESSIONS = 1 # only one user can upload data at a time due to resource constraints
 
 
 def log_mem(msg):
@@ -125,6 +126,14 @@ def insert_jsons_from_zip_to_duckdb(zip_path, session_id=None):
 @app.route("/process", methods=["POST"])
 def process_zip():
     cleanup_old_sessions()
+    # Limit concurrent sessions
+    session_files = [f for f in os.listdir(UPLOAD_DIR) if f.endswith(".duckdb")]
+    if len(session_files) >= MAX_SESSIONS:
+        return jsonify(
+            {
+                "error": "Server is busy. Too many users are generating visuals right now. Please try again in a few minutes."
+            }
+        ), 503
     print("Received /process request")
     log_mem("Start /process")
     if "file" not in request.files:
