@@ -28,7 +28,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from modules.create_bar_animation import days, figsize, interp_steps, period
+from modules.create_bar_animation import days, dpi, figsize, interp_steps, period
 from modules.normalize_inputs import normalize_inputs
 from modules.supabase_client import supabase
 
@@ -168,6 +168,7 @@ def send_animation_request_to_backend(
     interp_steps,
     period,
     figsize,
+    dpi,
 ):
     data = {
         "session_id": session_id,
@@ -181,6 +182,7 @@ def send_animation_request_to_backend(
         "interp_steps": interp_steps,
         "period": period,
         "figsize": figsize,
+        "dpi": dpi,
     }
     response = requests.post(
         "https://spotify-animation.fly.dev/generate_animation", json=data
@@ -781,26 +783,26 @@ st.markdown(
 )
 st.markdown("<div style='margin-bottom: -4.7em;'></div>", unsafe_allow_html=True)
 if st.button("Generate Animation", key="generate_animation_button"):
-#     st.session_state.generate_animation_clicked = True
+    #     st.session_state.generate_animation_clicked = True
 
-# if st.session_state.generate_animation_clicked:
-#     track_event(
-#         "generate_animation",
-#         metadata={
-#             "selected_attribute": selected_attribute,
-#             "analysis_metric": analysis_metric,
-#             "top_n": top_n,
-#         },
-#     )
-#     st.session_state.generate_animation_clicked = False  # reset flag
+    # if st.session_state.generate_animation_clicked:
+    #     track_event(
+    #         "generate_animation",
+    #         metadata={
+    #             "selected_attribute": selected_attribute,
+    #             "analysis_metric": analysis_metric,
+    #             "top_n": top_n,
+    #         },
+    #     )
+    #     st.session_state.generate_animation_clicked = False  # reset flag
     track_event(
-            "generate_animation",
-            metadata={
-                "selected_attribute": selected_attribute,
-                "analysis_metric": analysis_metric,
-                "top_n": top_n,
-            },
-        )
+        "generate_animation",
+        metadata={
+            "selected_attribute": selected_attribute,
+            "analysis_metric": analysis_metric,
+            "top_n": top_n,
+        },
+    )
 
     if hasattr(st.session_state, "session_id") and st.session_state.session_id:
         with st.spinner("Generating animation..."):
@@ -820,6 +822,7 @@ if st.button("Generate Animation", key="generate_animation_button"):
                 interp_steps,
                 period,
                 figsize,
+                dpi,
             )
 
             if response.status_code == 200:
