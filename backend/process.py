@@ -459,6 +459,15 @@ def generate_animation():
         image_cache.clear()
         plt.close("all")
         gc.collect()
+        gc.collect()
+        ffmpeg_procs = [
+            p
+            for p in psutil.process_iter(["name"])
+            if p.info["name"] and "ffmpeg" in p.info["name"]
+        ]
+        print(
+            f"FFMPEG processes running after cleanup: {len(ffmpeg_procs)}", flush=True
+        )
         return jsonify({"video": video_base64, "filename": filename}), 200
 
     except Exception as e:
