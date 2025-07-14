@@ -56,7 +56,7 @@ def fetch_images_batch(items_data: List[Dict], target_size: int) -> Dict[str, st
 
     if albums:
         track_uris = [item["track_uri"] for item in albums]
-        album_images = _fetch_tracks_batch(track_uris)
+        album_images = _fetch_tracks_batch(track_uris, target_size)
         for item in albums:
             track_uri = item["track_uri"]
             if track_uri in album_images:
