@@ -346,7 +346,7 @@ def generate_image():
         if df is None or df.empty:
             return jsonify(
                 {
-                    "error": "Session not found, expired, or no data for selection. Please upload your data again."
+                    "error": "Session expired. Please upload your data again to generate visuals."
                 }
             ), 400
         log_mem("After prepare_df_for_visual_plots")
@@ -409,7 +409,7 @@ def generate_animation():
         if df is None:
             return jsonify(
                 {
-                    "error": "Session not found or expired. Please upload your data again."
+                    "error": "Session expired. Please upload your data again to generate visuals."
                 }
             ), 400
         log_mem("After prepare_df_for_visual_anims")
