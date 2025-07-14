@@ -781,18 +781,26 @@ st.markdown(
 )
 st.markdown("<div style='margin-bottom: -4.7em;'></div>", unsafe_allow_html=True)
 if st.button("Generate Animation", key="generate_animation_button"):
-    st.session_state.generate_animation_clicked = True
+#     st.session_state.generate_animation_clicked = True
 
-if st.session_state.generate_animation_clicked:
+# if st.session_state.generate_animation_clicked:
+#     track_event(
+#         "generate_animation",
+#         metadata={
+#             "selected_attribute": selected_attribute,
+#             "analysis_metric": analysis_metric,
+#             "top_n": top_n,
+#         },
+#     )
+#     st.session_state.generate_animation_clicked = False  # reset flag
     track_event(
-        "generate_animation",
-        metadata={
-            "selected_attribute": selected_attribute,
-            "analysis_metric": analysis_metric,
-            "top_n": top_n,
-        },
-    )
-    st.session_state.generate_animation_clicked = False  # reset flag
+            "generate_animation",
+            metadata={
+                "selected_attribute": selected_attribute,
+                "analysis_metric": analysis_metric,
+                "top_n": top_n,
+            },
+        )
 
     if hasattr(st.session_state, "session_id") and st.session_state.session_id:
         with st.spinner("Generating animation..."):

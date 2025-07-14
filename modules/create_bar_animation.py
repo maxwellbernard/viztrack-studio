@@ -150,7 +150,7 @@ def preload_images_batch(
 
         # download images in parallel for efficiency
         if download_tasks:
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=8) as executor:
                 futures = [
                     executor.submit(_download_and_cache_image, task)
                     for task in download_tasks
