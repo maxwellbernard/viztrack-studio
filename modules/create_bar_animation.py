@@ -5,6 +5,7 @@ It includes functions to set up the animation, process data, and handle image fe
 
 import os
 import textwrap
+import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
@@ -33,19 +34,25 @@ warnings.filterwarnings(
 )
 
 days = 30
-dpi = 144
-interp_steps = 16
+# dpi = 144
+dpi = 72
+figsize = (16, 21.2)
+# figsize = (10, 13.25) 
+interp_steps = 17
 period = "d"
 
 
 def preload_images_batch(
     names, monthly_df, selected_attribute, item_type, top_n, target_size=200
 ) -> None:
+    start_time = time.time()
+    # print("[DEBUG] preload_images_batch: start")
     """
     Preload images using batch API + parallel downloads - same as create_bar_plot.py
     """
     items_to_fetch = []
     cache_keys = []
+    names = list(set(names))
     for name in names:
         cache_key = f"{name}_top_n_{top_n}"
         if selected_attribute == "track_name":
@@ -69,7 +76,10 @@ def preload_images_batch(
 
         cache_keys.append(cache_key)
 
-        if cache_key not in image_cache:
+        if cache_key in image_cache:
+            # print(f"[DEBUG] cache hit for {name} (cache_key: {cache_key})")
+            continue 
+        else:
             if selected_attribute == "track_name":
                 if not matching_rows.empty:
                     row = matching_rows.iloc[0]
@@ -108,8 +118,8 @@ def preload_images_batch(
                     }
                     items_to_fetch.append(item_data)
 
-        if items_to_fetch:
-            batch_results = fetch_images_batch(items_to_fetch)
+    if items_to_fetch:
+        batch_results = fetch_images_batch(items_to_fetch)
 
         # prepare download tasks
         download_tasks = []
@@ -154,9 +164,12 @@ def preload_images_batch(
     for name, cache_key in zip(names, cache_keys):
         if cache_key in image_cache:
             pass
+    elapsed = time.time() - start_time
+    # print(f"[DEBUG] preload_images_batch: end ({elapsed:.2f} seconds)")
 
 
 def _download_and_cache_image(task) -> bool:
+    start_time = time.time()
     """Download and cache a single image - designed for parallel execution"""
     name = task["name"]
     cache_key = task["cache_key"]
@@ -169,15 +182,25 @@ def _download_and_cache_image(task) -> bool:
         img_resized = img.resize((target_size, target_size), Image.Resampling.LANCZOS)
         color = get_dominant_color(img_resized, name)
         image_cache[cache_key] = {"img": img_resized, "color": color}
+        elapsed = time.time() - start_time
+        print(
+            # f"[DEBUG] _download_and_cache_image: success for {name} ({elapsed:.2f} seconds)"
+        )
         return True
     except Exception:
         image_cache[cache_key] = None
+        elapsed = time.time() - start_time
+        print(
+            f"[DEBUG] _download_and_cache_image: fail for {name} ({elapsed:.2f} seconds)"
+        )
         return False
 
 
 def precompute_data(
     monthly_df, selected_attribute, analysis_metric, top_n, start_date, end_date
 ) -> tuple:
+    start_time = time.time()
+    print("[DEBUG] precompute_data: start")
     """Precompute cumulative data and rankings for all timestamps."""
 
     monthly_df["Date"] = monthly_df["Date"].dt.to_timestamp()
@@ -300,6 +323,8 @@ def precompute_data(
             "names": names,
             "artist_names": artist_names,
         }
+    elapsed = time.time() - start_time
+    print(f"[DEBUG] precompute_data: end ({elapsed:.2f} seconds)")
     return timestamps, precomputed_data
 
 
@@ -314,12 +339,19 @@ def create_bar_animation(
     interp_steps,
     start_date,
     end_date,
+    figsize,
 ) -> animation.FuncAnimation:
+    start_time = time.time()
+    print("[DEBUG] create_bar_animation: start")
     """Prepare the bar chart animation with optimized runtime."""
+    t0 = time.time()
     # Figure setup
-    fig, ax = plt.subplots(figsize=(16, 21.2), dpi=dpi)
+    # fig, ax = plt.subplots(figsize=(16, 21.2), dpi=dpi)
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
     fig.patch.set_facecolor("#F0F0F0")  # light gray
     plt.subplots_adjust(left=0.27, right=0.85, top=0.8, bottom=0.13)
+    t1 = time.time()
+    print(f"Time for figure setup: {t1 - t0:.2f} seconds")
     font_prop_heading, font_path_labels = get_fonts()
     title_map = {
         ("artist_name", "Streams"): "Most Played Artists",
@@ -338,6 +370,18 @@ def create_bar_animation(
         fontsize=56,
         fontproperties=font_prop_heading,
     )
+    fig.text(
+        0.60,  # corener was 98
+        0.060,
+        "www.viztracks.com",
+        ha="right",
+        va="bottom",
+        fontproperties=font_prop_heading,
+        fontsize=24,
+        color="#bed1bc",
+        # color="#888888",
+        transform=fig.transFigure,
+    )
 
     # Load Spotify Image
     img_path = os.path.join(
@@ -355,7 +399,9 @@ def create_bar_animation(
     df["Date"] = pd.to_datetime(df["Date"])
     df["Date"] = df["Date"].dt.to_period(period)
     monthly_df = df
-
+    t2 = time.time()
+    print(f"Time for data preprocessing: {t2 - t1:.2f} seconds")
+    t3 = time.time()
     # Precompute data to avoid per-frame aggregation for efficiency
     timestamps, precomputed_data = precompute_data(
         monthly_df,
@@ -365,6 +411,8 @@ def create_bar_animation(
         start_date,
         end_date,
     )
+    t4 = time.time()
+    print(f"Time for precomputing data: {t4 - t3:.2f} seconds")
 
     # Image scaling and positioning
     top_n_scale_mapping_height = {
@@ -393,7 +441,7 @@ def create_bar_animation(
         10: 0.7,
     }.get(top_n)
     target_size = int(bar_height * scale_factor)
-
+    t5 = time.time()
     # Batch preload images
     if selected_attribute == "track_name":
         all_names = monthly_df["track_uri"].unique()
@@ -403,9 +451,21 @@ def create_bar_animation(
         ).unique()
     else:
         all_names = monthly_df[selected_attribute].unique()
+
+        # Get all unique names that will actually be used in the animation
+    used_names = set()
+    for frame_data in precomputed_data.values():
+        used_names.update(frame_data["names"])
+    used_names = {name for name in used_names if name}  # Remove empty strings
+
+    # Only preload images for names that are actually used
+    all_names = [name for name in all_names if name in used_names]
+    print(f"Preloading images for {len(all_names)} unique items...")
     preload_images_batch(
         all_names, monthly_df, selected_attribute, item_type, top_n, target_size
     )
+    t6 = time.time()
+    print(f"Time for preloading images: {t6 - t5:.2f} seconds")
     # Start all bars off-screen
     if top_n == 1:
         initial_positions = [-1]
@@ -593,6 +653,7 @@ def create_bar_animation(
                 bars[i].set_facecolor(np.array(img_data["color"]) / 255)
 
     total_frames = len(timestamps) * interp_steps
+    print(f"Total frames: {total_frames}")
 
     def quadratic_ease_in_out(t) -> float:
         """Quadratic ease-in-out function to handle smooth transitions."""
@@ -884,6 +945,17 @@ def create_bar_animation(
         year_text.set_text(f"{current_time.year}")
         month_text.set_text(f"{current_time.strftime('%B')}")
 
-    return animation.FuncAnimation(
+    t7 = time.time()
+    print(f"Time for animation setup: {t7 - t6:.2f} seconds")
+    anim = animation.FuncAnimation(
         fig, animate, frames=total_frames, interval=1, repeat=False
     )
+    t8 = time.time()
+    print(f"Total animation creation time: {t8 - t7:.2f} seconds")
+    elapsed = time.time() - start_time
+    print(f"[DEBUG] create_bar_animation: end ({elapsed:.2f} seconds)")
+    return anim
+
+    # return animation.FuncAnimation(
+    #     fig, animate, frames=total_frames, interval=1, repeat=False
+    # )

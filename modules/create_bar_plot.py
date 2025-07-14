@@ -153,7 +153,7 @@ def plot_final_frame(
     setup_bar_plot_style(ax, top_n, analysis_metric)
 
     fig.text(
-        0.63,  # corener was 98
+        0.632,  # corner was 98
         0.02,
         "www.viztracks.com",
         ha="right",
