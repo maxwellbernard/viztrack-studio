@@ -97,14 +97,12 @@ def plot_final_frame(
         plt.show()
         return
 
-    # final frame data (no interpolation)
     widths = [0] * top_n
     labels = [""] * top_n
     names = [""] * top_n
     positions = list(range(top_n - 1, -1, -1))  # descending order
 
     for i, row in top_n_df.iterrows():
-        # widths[i] = row[f"Cumulative_{analysis_metric}"]
         widths[i] = row[analysis_metric]
 
         if selected_attribute == "track_name" or selected_attribute == "album_name":
@@ -161,7 +159,6 @@ def plot_final_frame(
         fontproperties=font_prop_heading,
         fontsize=24,
         color="#bed1bc",
-        # color="#888888",
         transform=fig.transFigure,
     )
 
@@ -257,25 +254,11 @@ def plot_final_frame(
             batch_items = [
                 item for item in items_to_fetch if not item.get("search_required")
             ]
-            search_items = [
-                item for item in items_to_fetch if item.get("search_required")
-            ]
 
             batch_results = {}
 
             if batch_items:
-                batch_results = fetch_images_batch(batch_items)
-            if search_items:
-                from modules.prepare_visuals import fetch_image
-
-                for item in search_items:
-                    try:
-                        image_url = fetch_image(item["name"], "artist")
-                        if image_url:
-                            batch_results[item["name"]] = image_url
-                        time.sleep(0.1)
-                    except Exception as e:
-                        print(f"Search failed for {item['name']}: {e}")
+                batch_results = fetch_images_batch(batch_items, target_size)
 
             # prepare download tasks
             download_tasks = []
@@ -331,7 +314,7 @@ def plot_final_frame(
             response.raise_for_status()
             img = Image.open(BytesIO(response.content))
             img_resized = img.resize(
-                (target_size, target_size), Image.Resampling.LANCZOS
+                (target_size, target_size), Image.Resampling.BILINEAR
             )
             color = get_dominant_color(img_resized, name)
             image_cache[cache_key] = {"img": img_resized, "color": color}
