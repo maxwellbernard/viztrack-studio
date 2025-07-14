@@ -458,7 +458,7 @@ def generate_animation():
                     # "-preset",
                     # "ultrafast",
                     "-threads",
-                    "4",
+                    "8",
                     "-crf",
                     "30",
                 ],

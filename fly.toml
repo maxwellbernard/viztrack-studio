@@ -20,6 +20,6 @@ primary_region = 'arn'
   idle_timeout = 400
 
 [[vm]]
-  memory = '8gb'
+  memory = '16gb'
   cpu_kind = 'performance'
-  cpus = 4
+  cpus = 8
