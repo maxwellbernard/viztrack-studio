@@ -437,7 +437,7 @@ def generate_animation():
             figsize,
         )
         t4 = time.time()
-        print(f"Time to create bar animation: {t4 - t3:.2f} seconds")
+        print(f"Frame generation (matplotlib) time: {t4 - t3:.2f} seconds")
         log_mem("After create_bar_animation")
 
         # Save animation to a temporary file for download
@@ -451,13 +451,22 @@ def generate_animation():
                 writer="ffmpeg",
                 fps=speed_for_bar_animation,
                 savefig_kwargs={"facecolor": "#F0F0F0"},
-                extra_args=["-preset", "veryfast"],
+                # extra_args=["-preset", "veryfast"],
+                extra_args=[
+                    "-vcodec",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-crf",
+                    "30",
+                ],
             )
             log_mem("After anim_bar_plot.save (ffmpeg encoding done)")
             temp_file.seek(0)
             video_bytes = temp_file.read()
         t6 = time.time()
-        print(f"Time to save animation: {t6 - t5:.2f} seconds")
+        print(f"Encoding (ffmpeg) time: {t6 - t5:.2f} seconds")
+        print(f"Total animation time: {t6 - t3:.2f} seconds")
         video_base64 = base64.b64encode(video_bytes).decode("utf-8")
         filename = f"{selected_attribute}_{analysis_metric}_animation.mp4"
         try:

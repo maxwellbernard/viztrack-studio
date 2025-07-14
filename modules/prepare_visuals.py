@@ -238,7 +238,6 @@ def get_fonts() -> tuple:
     """
     font_path_heading = os.path.join(os.getcwd(), "fonts", "Montserrat-Bold.ttf")
     font_path_labels = os.path.join(os.getcwd(), "fonts", "Montserrat-SemiBold.ttf")
-    # fredoka_path = os.path.join(os.getcwd(), "fonts", "Fredoka-Regular.ttf")
 
     font_prop_heading = FontProperties(
         family="sans-serif",
