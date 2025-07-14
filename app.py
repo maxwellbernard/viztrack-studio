@@ -22,6 +22,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import base64
 import tempfile
+import uuid
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -789,74 +790,98 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.markdown("<div style='margin-bottom: -4.7em;'></div>", unsafe_allow_html=True)
+# Helper: Only allow one animation process at a time per session
+if "animation_job_id" not in st.session_state:
+    st.session_state.animation_job_id = None
+if "animation_processing" not in st.session_state:
+    st.session_state.animation_processing = False
+
 if st.button("Generate Animation", key="generate_animation_button"):
-    # Clear previous animation result before storing new one
-    st.session_state.temp_file_path_bar_anim = None
-    st.session_state.file_name_for_download = None
-    track_event(
-        "generate_animation",
-        metadata={
-            "selected_attribute": selected_attribute,
-            "analysis_metric": analysis_metric,
-            "top_n": top_n,
-        },
-    )
-
-    if hasattr(st.session_state, "session_id") and st.session_state.session_id:
-        with st.spinner("Generating animation..."):
-            message_placeholder = st.empty()
-            message_placeholder.write(
-                "Hold tight, this may take a few minutes if your data covers many years 😬"
-            )
-            response = send_animation_request_to_backend(
-                st.session_state.session_id,
-                selected_attribute,
-                analysis_metric,
-                top_n,
-                start_date,
-                end_date,
-                speed_for_bar_animation,
-                days,
-                interp_steps,
-                period,
-                figsize,
-                dpi,
-            )
-
-            if response.status_code == 200:
-                try:
-                    result = response.json()
-                    video_base64 = result["video"]
-                    filename = result["filename"]
-                    video_bytes = base64.b64decode(video_base64)
-
-                    # Save to a temporary file for download
-                    with tempfile.NamedTemporaryFile(
-                        delete=False, suffix=".mp4"
-                    ) as temp_file:
-                        temp_file.write(video_bytes)
-                        temp_file_path = temp_file.name
-                        st.session_state.temp_file_path_bar_anim = temp_file_path
-                        st.session_state.file_name_for_download = filename
-                    message_placeholder.empty()
-                except Exception as e:
-                    st.session_state.temp_file_path_bar_anim = None
-                    st.session_state.file_name_for_download = None
-                    st.error(f"Error processing animation response: {str(e)}")
-            else:
-                try:
-                    error_data = response.json()
-                    st.session_state.temp_file_path_bar_anim = None
-                    st.session_state.file_name_for_download = None
-                    st.error(
-                        f"Animation generation failed: {error_data.get('error', 'Unknown error')}"
-                    )
-                except Exception:
-                    st.session_state.temp_file_path_bar_anim = None
-                    st.session_state.file_name_for_download = None
-                    st.error("Failed to generate animation. Please try again.")
+    # Only allow one animation process at a time
+    if st.session_state.animation_processing:
+        st.warning(
+            "An animation is already being generated. Please wait for it to finish."
+        )
     else:
-        st.warning("Please upload your Spotify JSON files to proceed.")
+        # Clear previous animation result before storing new one
+        if st.session_state.temp_file_path_bar_anim:
+            try:
+                import os
+
+                os.remove(st.session_state.temp_file_path_bar_anim)
+            except Exception:
+                pass
+        st.session_state.temp_file_path_bar_anim = None
+        st.session_state.file_name_for_download = None
+        st.session_state.download_animation_clicked = False
+        st.session_state.animation_processing = True
+        st.session_state.animation_job_id = str(
+            uuid.uuid4()
+        )  # Unique job ID for this request
+        track_event(
+            "generate_animation",
+            metadata={
+                "selected_attribute": selected_attribute,
+                "analysis_metric": analysis_metric,
+                "top_n": top_n,
+                "job_id": st.session_state.animation_job_id,
+            },
+        )
+
+        if hasattr(st.session_state, "session_id") and st.session_state.session_id:
+            with st.spinner("Generating animation..."):
+                message_placeholder = st.empty()
+                message_placeholder.write(
+                    "Hold tight, this may take a few minutes if your data covers many years 😬"
+                )
+                response = send_animation_request_to_backend(
+                    st.session_state.session_id,
+                    selected_attribute,
+                    analysis_metric,
+                    top_n,
+                    start_date,
+                    end_date,
+                    speed_for_bar_animation,
+                    days,
+                    interp_steps,
+                    period,
+                    figsize,
+                    dpi,
+                )
+                if response.status_code == 200:
+                    try:
+                        result = response.json()
+                        video_base64 = result["video"]
+                        filename = result["filename"]
+                        video_bytes = base64.b64decode(video_base64)
+                        with tempfile.NamedTemporaryFile(
+                            delete=False, suffix=".mp4"
+                        ) as temp_file:
+                            temp_file.write(video_bytes)
+                            temp_file_path = temp_file.name
+                            st.session_state.temp_file_path_bar_anim = temp_file_path
+                            st.session_state.file_name_for_download = filename
+                        message_placeholder.empty()
+                    except Exception as e:
+                        st.session_state.temp_file_path_bar_anim = None
+                        st.session_state.file_name_for_download = None
+                        st.error(f"Error processing animation response: {str(e)}")
+                else:
+                    try:
+                        error_data = response.json()
+                        st.session_state.temp_file_path_bar_anim = None
+                        st.session_state.file_name_for_download = None
+                        st.error(
+                            f"Animation generation failed: {error_data.get('error', 'Unknown error')}"
+                        )
+                    except Exception:
+                        st.session_state.temp_file_path_bar_anim = None
+                        st.session_state.file_name_for_download = None
+                        st.error("Failed to generate animation. Please try again.")
+                st.session_state.animation_processing = False
+        else:
+            st.session_state.animation_processing = False
+            st.warning("Please upload your Spotify JSON files to proceed.")
 
 if st.session_state.get("temp_file_path_bar_anim"):
     st.markdown(
@@ -882,6 +907,12 @@ if st.session_state.get("temp_file_path_bar_anim"):
                 if clicked:
                     st.session_state.download_animation_clicked = True
                     # Clear animation from session state after download
+                    try:
+                        import os
+
+                        os.remove(st.session_state.temp_file_path_bar_anim)
+                    except Exception:
+                        pass
                     st.session_state.temp_file_path_bar_anim = None
                     st.session_state.file_name_for_download = None
 
