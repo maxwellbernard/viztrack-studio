@@ -17,7 +17,7 @@ primary_region = 'arn'
   processes = ['app']
 
 [http_service.http_options]
-  idle_timeout = "400s"  # 6 minutes
+  idle_timeout = 400
 
 [[vm]]
   memory = '2gb'
