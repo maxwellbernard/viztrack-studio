@@ -21,11 +21,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 """
 
 import base64
+import os
 import tempfile
+import time
 import uuid
 from datetime import datetime, timezone
-import time
-import os
 
 import pandas as pd
 import requests
@@ -35,32 +35,36 @@ from modules.create_bar_animation import days, dpi, figsize, interp_steps, perio
 from modules.normalize_inputs import normalize_inputs
 from modules.supabase_client import supabase
 
-
 # restrict number of concurrent sessions to prevent server overload
 LOCK_FILE = "/tmp/spotify_app_session.lock"
+LOCK_TIMEOUT_SECONDS = 45 * 60  # 45 minutes
+
 
 def acquire_lock():
+    now = time.time()
     if os.path.exists(LOCK_FILE):
-        return False
+        try:
+            with open(LOCK_FILE, "r") as f:
+                lock_time = float(f.read().strip())
+            if now - lock_time > LOCK_TIMEOUT_SECONDS:
+                os.remove(LOCK_FILE)  # Expired lock, remove it
+            else:
+                return False
+        except Exception:
+            return False
     with open(LOCK_FILE, "w") as f:
-        f.write(str(time.time()))
+        f.write(str(now))
     return True
 
-def release_lock():
-    if os.path.exists(LOCK_FILE):
-        os.remove(LOCK_FILE)
 
 if "lock_acquired" not in st.session_state:
     st.session_state.lock_acquired = acquire_lock()
 
 if not st.session_state.lock_acquired:
-    st.error("This app is already open in another tab or browser window. Please close other tabs and refresh.")
+    st.error(
+        "Server is busy. Too many users are generating visuals right now. Please try again in a few minutes."
+    )
     st.stop()
-
-def on_session_end():
-    release_lock()
-
-st.on_event("shutdown", on_session_end)
 
 st.set_page_config(
     page_title="Viztrack Studio",
