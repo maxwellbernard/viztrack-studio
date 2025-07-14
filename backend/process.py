@@ -1,4 +1,5 @@
 import base64
+import gc
 import json
 import os
 import tempfile
@@ -454,8 +455,9 @@ def generate_animation():
             os.remove(temp_file_path)
         except Exception as cleanup_exc:
             print(f"Warning: Could not delete temp animation file: {cleanup_exc}")
-        import gc
-        plt.close('all')
+        del anim_bar_plot
+        image_cache.clear()
+        plt.close("all")
         gc.collect()
         return jsonify({"video": video_base64, "filename": filename}), 200
 
