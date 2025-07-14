@@ -75,9 +75,7 @@ def preload_images_batch(
                 cache_key = f"{name}_top_n_{top_n}"
 
         cache_keys.append(cache_key)
-
         if cache_key in image_cache:
-            # print(f"[DEBUG] cache hit for {name} (cache_key: {cache_key})")
             continue
         else:
             if selected_attribute == "track_name":
@@ -119,7 +117,14 @@ def preload_images_batch(
                     items_to_fetch.append(item_data)
 
     if items_to_fetch:
-        batch_results = fetch_images_batch(items_to_fetch, target_size)
+        try:
+            batch_results = fetch_images_batch(items_to_fetch, target_size)
+        except Exception as e:
+            print(f"[ERROR] Batch image API failed: {e}")
+            # Mark all items as missing in cache to avoid repeated attempts
+            for item in items_to_fetch:
+                image_cache[item["cache_key"]] = None
+            return  # Fail fast, do not attempt downloads
 
         # prepare download tasks
         download_tasks = []
@@ -155,11 +160,13 @@ def preload_images_batch(
                     executor.submit(_download_and_cache_image, task)
                     for task in download_tasks
                 ]
-
                 successful_downloads = 0
                 for future in futures:
-                    if future.result():
-                        successful_downloads += 1
+                    try:
+                        if future.result():
+                            successful_downloads += 1
+                    except Exception as e:
+                        print(f"[ERROR] Image download failed: {e}")
 
     for name, cache_key in zip(names, cache_keys):
         if cache_key in image_cache:
