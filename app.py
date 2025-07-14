@@ -666,6 +666,10 @@ if st.button("Generate Image", key="generate_images_button"):
     st.session_state.generate_image_clicked = True
 
 if st.session_state.generate_image_clicked:
+    # Clear previous image result before storing new one
+    st.session_state.bar_plot_bytes = None
+    st.session_state.file_name_for_download = None
+
     track_event(
         "generate_image",
         metadata={
@@ -736,6 +740,9 @@ if st.session_state.bar_plot_bytes:
             )
             if clicked:
                 st.session_state.download_image_clicked = True
+                # Clear image from session state after download
+                st.session_state.bar_plot_bytes = None
+                st.session_state.file_name_for_download = None
 
             st.markdown(
                 "<p style='text-align: left; font-size: 14px; color: gray;'>Then you can upload it to social media and show friends your superior music taste!</p>",
@@ -783,18 +790,7 @@ st.markdown(
 )
 st.markdown("<div style='margin-bottom: -4.7em;'></div>", unsafe_allow_html=True)
 if st.button("Generate Animation", key="generate_animation_button"):
-    #     st.session_state.generate_animation_clicked = True
-
-    # if st.session_state.generate_animation_clicked:
-    #     track_event(
-    #         "generate_animation",
-    #         metadata={
-    #             "selected_attribute": selected_attribute,
-    #             "analysis_metric": analysis_metric,
-    #             "top_n": top_n,
-    #         },
-    #     )
-    #     st.session_state.generate_animation_clicked = False  # reset flag
+    # Clear previous animation result before storing new one
     st.session_state.temp_file_path_bar_anim = None
     st.session_state.file_name_for_download = None
     track_event(
@@ -885,6 +881,9 @@ if st.session_state.get("temp_file_path_bar_anim"):
                 )
                 if clicked:
                     st.session_state.download_animation_clicked = True
+                    # Clear animation from session state after download
+                    st.session_state.temp_file_path_bar_anim = None
+                    st.session_state.file_name_for_download = None
 
 if st.session_state.download_animation_clicked:
     track_event(
