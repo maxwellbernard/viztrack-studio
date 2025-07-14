@@ -34,19 +34,19 @@ warnings.filterwarnings(
 )
 
 days = 30
-# dpi = 144
 dpi = 72
 figsize = (16, 21.2)
-# figsize = (10, 13.25) 
+# figsize = (10, 13.25)
+# figsize = (7.55, 10)
 interp_steps = 17
 period = "d"
+RESAMPLING_FILTER = Image.Resampling.BILINEAR
 
 
 def preload_images_batch(
     names, monthly_df, selected_attribute, item_type, top_n, target_size=200
 ) -> None:
     start_time = time.time()
-    # print("[DEBUG] preload_images_batch: start")
     """
     Preload images using batch API + parallel downloads - same as create_bar_plot.py
     """
@@ -78,7 +78,7 @@ def preload_images_batch(
 
         if cache_key in image_cache:
             # print(f"[DEBUG] cache hit for {name} (cache_key: {cache_key})")
-            continue 
+            continue
         else:
             if selected_attribute == "track_name":
                 if not matching_rows.empty:
@@ -119,7 +119,7 @@ def preload_images_batch(
                     items_to_fetch.append(item_data)
 
     if items_to_fetch:
-        batch_results = fetch_images_batch(items_to_fetch)
+        batch_results = fetch_images_batch(items_to_fetch, target_size)
 
         # prepare download tasks
         download_tasks = []
@@ -179,13 +179,13 @@ def _download_and_cache_image(task) -> bool:
         response = requests.get(image_url, timeout=10)
         response.raise_for_status()
         img = Image.open(BytesIO(response.content))
-        img_resized = img.resize((target_size, target_size), Image.Resampling.LANCZOS)
+        img_resized = img.resize((target_size, target_size), RESAMPLING_FILTER)
         color = get_dominant_color(img_resized, name)
         image_cache[cache_key] = {"img": img_resized, "color": color}
         elapsed = time.time() - start_time
-        print(
-            # f"[DEBUG] _download_and_cache_image: success for {name} ({elapsed:.2f} seconds)"
-        )
+        # print(
+        #     f"[DEBUG] _download_and_cache_image: success for {name} ({elapsed:.2f} seconds)"
+        # )
         return True
     except Exception:
         image_cache[cache_key] = None
@@ -452,13 +452,13 @@ def create_bar_animation(
     else:
         all_names = monthly_df[selected_attribute].unique()
 
-        # Get all unique names that will actually be used in the animation
+    # Get all unique names to be used in the animation
     used_names = set()
     for frame_data in precomputed_data.values():
         used_names.update(frame_data["names"])
-    used_names = {name for name in used_names if name}  # Remove empty strings
+    used_names = {name for name in used_names if name}
 
-    # Only preload images for names that are actually used
+    # Only preload images for names that are needed
     all_names = [name for name in all_names if name in used_names]
     print(f"Preloading images for {len(all_names)} unique items...")
     preload_images_batch(
@@ -505,13 +505,27 @@ def create_bar_animation(
         ax.set_ylim(
             bottom_pos - bottom_gap - bar_height / 2, top_pos + top_gap + bar_height / 2
         )
-
+    # how far to the left of the bar to place the image
+    top_n_xybox_mapping = {
+        1: (-127, 0),
+        2: (-127, 0),
+        3: (-113, 0),
+        4: (-80, 0),
+        5: (-69, 0),
+        6: (-57, 0),
+        7: (-47, 0),
+        8: (-41, 0),
+        9: (-39, 0),
+        10: (-36, 0),
+    }
     # Pre-allocate text and image annotations
     text_objects = []
     label_objects = []
     artist_label_objects = []
-    image_annotations = [None] * top_n
-
+    image_annotations = []
+    offset_images = []
+    blank_img = np.zeros((target_size, target_size, 3), dtype=np.uint8)
+    xybox = top_n_xybox_mapping.get(top_n)
     for i in range(top_n):
         # bar numbers text
         text_obj = ax.text(
@@ -553,13 +567,34 @@ def create_bar_animation(
         )
         artist_label_objects.append(artist_obj)
 
+        # Pre-create OffsetImage and AnnotationBbox for each bar
+        offset_img = OffsetImage(blank_img, zoom=1)
+        ab = AnnotationBbox(
+            offset_img,
+            (0, 0),
+            xybox=xybox,
+            xycoords="data",
+            boxcoords="offset points",
+            frameon=False,
+            visible=False,
+            bboxprops=dict(
+                boxstyle="round,pad=0.05",
+                edgecolor="#A9A9A9",
+                facecolor="#DCDCDC",
+                linewidth=0.5,
+            ),
+        )
+        ax.add_artist(ab)
+        image_annotations.append(ab)
+        offset_images.append(offset_img)
+
     # Add year and month text boxes
     year_text = ax.text(
         0.78,
         0.10,
         "",
         transform=ax.transAxes,
-        fontsize=34,
+        fontsize=38,
         fontproperties=font_prop_heading,
         bbox=dict(facecolor="#F0F0F0", edgecolor="none", alpha=0.7),
         color="#A9A9A9",
@@ -569,7 +604,7 @@ def create_bar_animation(
         0.05,
         "",
         transform=ax.transAxes,
-        fontsize=34,
+        fontsize=38,
         fontproperties=font_prop_heading,
         bbox=dict(facecolor="#F0F0F0", edgecolor="none", alpha=0.7),
         color="#A9A9A9",
@@ -587,20 +622,6 @@ def create_bar_animation(
         ha="center",
         va="top",
     )
-
-    # how far to the left of the bar to place the image
-    top_n_xybox_mapping = {
-        1: (-127, 0),
-        2: (-127, 0),
-        3: (-113, 0),
-        4: (-80, 0),
-        5: (-69, 0),
-        6: (-57, 0),
-        7: (-47, 0),
-        8: (-41, 0),
-        9: (-39, 0),
-        10: (-36, 0),
-    }
 
     interp_steps = interp_steps
 
@@ -644,6 +665,7 @@ def create_bar_animation(
     anim_state.prev_names = initial_names[:]
     anim_state.prev_positions = [-1] * top_n  # Start off-screen
     anim_state.prev_interp_positions = [-1] * top_n  # Start off-screen
+    anim_state.last_img_obj = [None] * top_n
 
     for i, name in enumerate(initial_names):
         if name:
@@ -666,17 +688,20 @@ def create_bar_animation(
         sub_step = frame % interp_steps
         current_time = timestamps[main_frame]
 
+        t_start = time.time()
         # Use precomputed data
         data = precomputed_data[current_time]
         widths = data["widths"]
         labels = data["labels"]
         names = data["names"]
         artist_names = data["artist_names"]
+        t_data = time.time()
 
         if top_n == 1:
             target_positions = [4.5]
         else:
             target_positions = [8.9 - i * (8.6 / (top_n - 1)) for i in range(top_n)]
+        t_positions = time.time()
 
         if sub_step == 0:
             if frame == 0:
@@ -704,6 +729,7 @@ def create_bar_animation(
         else:
             new_positions = anim_state.current_new_positions[:]
             start_positions = anim_state.prev_interp_positions[:]
+        t_mapping = time.time()
 
         t = sub_step / (interp_steps - 1) if interp_steps > 1 else 1.0
         t_eased = quadratic_ease_in_out(t)
@@ -728,6 +754,7 @@ def create_bar_animation(
             )
             for i in range(top_n)
         ]
+        t_interp = time.time()
 
         max_width = max(interp_widths) if interp_widths else 1
 
@@ -761,6 +788,7 @@ def create_bar_animation(
             else:
                 display_widths.append(0)
                 active_bars.append(False)
+        t_bars = time.time()
 
         # handle first frame specially
         if frame == 0 and sub_step == 0:
@@ -777,6 +805,7 @@ def create_bar_animation(
                 bar.set_width(0)
                 bar.set_y(-1)  # Move off-screen
                 bar.set_visible(False)  # Hide completely
+        t_bar_draw = time.time()
 
         max_value = max(display_widths) if display_widths else 1
         offset = max(0.01, max_value * 0.03)
@@ -798,6 +827,7 @@ def create_bar_animation(
             label_fontsize = top_n_label_fontsize_mapping.get(top_n, 22)
         else:
             label_fontsize = 22
+        t_label_font = time.time()
 
         for i in range(top_n):
             name = names[i] if i < len(names) else ""
@@ -810,9 +840,8 @@ def create_bar_animation(
                 text_objects[i].set_visible(False)
                 label_objects[i].set_visible(False)
                 artist_label_objects[i].set_visible(False)
-                if image_annotations[i]:
-                    image_annotations[i].remove()
-                    image_annotations[i] = None
+                image_annotations[i].set_visible(False)
+                anim_state.last_img_obj[i] = None  # Reset last image
             elif has_data:  # Only show elements for bars with data
                 text_objects[i].set_position((text_x + offset, bar_center_y))
                 text_objects[i].set_text(f"{interp_widths[i]:,.0f}")
@@ -881,53 +910,25 @@ def create_bar_animation(
                 img_data = image_cache.get(cache_key)
 
                 if img_data and text_x > 0 and name:
-                    needs_update = (
-                        not hasattr(image_annotations[i], "cached_name")
-                        or getattr(image_annotations[i], "cached_name", None) != name
-                    )
-
-                    if needs_update:
-                        if image_annotations[i]:
-                            image_annotations[i].remove()
-
-                        img = img_data["img"]
-                        xybox = top_n_xybox_mapping.get(top_n)
-                        if img_data["color"]:
-                            bars[i].set_facecolor(np.array(img_data["color"]) / 255)
-
-                        img_box = OffsetImage(img, zoom=1)
-                        image_annotations[i] = AnnotationBbox(
-                            img_box,
-                            (text_x, bar_center_y),
-                            xybox=xybox,
-                            xycoords="data",
-                            boxcoords="offset points",
-                            frameon=False,
-                            bboxprops=dict(
-                                boxstyle="round,pad=0.05",
-                                edgecolor="#A9A9A9",
-                                facecolor="#DCDCDC",
-                                linewidth=0.5,
-                            ),
-                        )
-                        ax.add_artist(image_annotations[i])
-                        image_annotations[i].cached_name = name
-                    else:
-                        if image_annotations[i]:
-                            image_annotations[i].xy = (
-                                text_x,
-                                bar_center_y,
-                            )
-                elif image_annotations[i]:
-                    image_annotations[i].remove()
-                    image_annotations[i] = None
+                    # Only update OffsetImage if the image object has changed
+                    img_obj = img_data["img"]
+                    if anim_state.last_img_obj[i] is not img_obj:
+                        offset_images[i].set_data(np.array(img_obj))
+                        anim_state.last_img_obj[i] = img_obj
+                    image_annotations[i].xy = (text_x, bar_center_y)
+                    image_annotations[i].set_visible(True)
+                    if img_data["color"]:
+                        bars[i].set_facecolor(np.array(img_data["color"]) / 255)
+                else:
+                    image_annotations[i].set_visible(False)
+                    anim_state.last_img_obj[i] = None
             else:
                 text_objects[i].set_visible(False)
                 label_objects[i].set_visible(False)
                 artist_label_objects[i].set_visible(False)
-                if image_annotations[i]:
-                    image_annotations[i].remove()
-                    image_annotations[i] = None
+                image_annotations[i].set_visible(False)
+                anim_state.last_img_obj[i] = None
+        t_images = time.time()
 
         # update the state for the next frame
         if sub_step == interp_steps - 1:
@@ -937,25 +938,32 @@ def create_bar_animation(
             anim_state.prev_interp_positions = target_positions[:]
         else:
             anim_state.prev_interp_positions = interp_positions[:]
+        t_state = time.time()
 
         ax.set_yticks([])
         ax.set_xlim(0, max(display_widths) * 1.1)
+        t_axes = time.time()
 
         # update year and month text
         year_text.set_text(f"{current_time.year}")
         month_text.set_text(f"{current_time.strftime('%B')}")
+        t_text = time.time()
+
+        # print(
+        #     f"[TIMING] frame={frame} data={t_data - t_start:.4f}s pos={t_positions - t_data:.4f}s map={t_mapping - t_positions:.4f}s interp={t_interp - t_mapping:.4f}s bars={t_bars - t_interp:.4f}s bar_draw={t_bar_draw - t_bars:.4f}s label_font={t_label_font - t_bar_draw:.4f}s images={t_images - t_label_font:.4f}s state={t_state - t_images:.4f}s axes={t_axes - t_state:.4f}s text={t_text - t_axes:.4f}s total={t_text - t_start:.4f}s"
+        # )
 
     t7 = time.time()
     print(f"Time for animation setup: {t7 - t6:.2f} seconds")
     anim = animation.FuncAnimation(
-        fig, animate, frames=total_frames, interval=1, repeat=False
+        fig,
+        animate,
+        frames=total_frames,
+        interval=1,
+        repeat=False,
     )
     t8 = time.time()
     print(f"Total animation creation time: {t8 - t7:.2f} seconds")
     elapsed = time.time() - start_time
-    print(f"[DEBUG] create_bar_animation: end ({elapsed:.2f} seconds)")
+    print(f"create_bar_animation: end ({elapsed:.2f} seconds)")
     return anim
-
-    # return animation.FuncAnimation(
-    #     fig, animate, frames=total_frames, interval=1, repeat=False
-    # )
