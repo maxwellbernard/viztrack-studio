@@ -455,8 +455,10 @@ def generate_animation():
                 extra_args=[
                     "-vcodec",
                     "libx264",
-                    "-preset",
-                    "ultrafast",
+                    # "-preset",
+                    # "ultrafast",
+                    "-threads",
+                    "4",
                     "-crf",
                     "30",
                 ],
