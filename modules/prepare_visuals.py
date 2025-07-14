@@ -81,47 +81,6 @@ def _fetch_artists_from_tracks_batch(artist_items: List[Dict]) -> Dict[str, str]
     # we only have artist_name from metadata, so we need to get the artist_id from the
     # track_uri to be able to process the artist images in batches.
 
-    # # extract track IDs from URIs
-    # track_uris = [item["track_uri"] for item in artist_items]
-    # # track_ids = []
-    # # uri_to_name = {}
-
-    # # for item in artist_items:
-    # #     track_uri = item["track_uri"]
-    # #     track_id = track_uri.split(":")[-1] if ":" in track_uri else track_uri
-    # #     track_ids.append(track_id)
-    # #     uri_to_name[track_uri] = item["name"]  # store the artist name by track_uri
-    # track_ids = [item["track_uri"] for item in artist_items]
-    # uri_to_name = {item["track_uri"]: item["name"] for item in artist_items}
-
-    # # batch fetch track information
-    # artist_id_to_name = {}
-    # all_artist_ids = []
-
-    # for i in range(0, len(track_ids), 50):
-    #     batch_track_ids = track_ids[i : i + 50]
-    #     batch_track_uris = track_uris[i : i + 50]
-
-    #     try:
-    #         tracks_response = sp.tracks(batch_track_ids)
-
-    #         for j, track in enumerate(tracks_response["tracks"]):
-    #             if track and track.get("artists"):
-    #                 track_uri = batch_track_uris[j]
-    #                 artist_name = uri_to_name.get(track_uri)
-
-    #                 for artist in track["artists"]:
-    #                     if artist["name"] == artist_name:
-    #                         artist_id = artist["id"]
-    #                         artist_id_to_name[artist_id] = artist_name
-    #                         all_artist_ids.append(artist_id)
-    #                         break
-
-    #         time.sleep(0.1)
-
-    #     except Exception as e:
-    #         print(f"Batch tracks API failed: {e}")
-    #         continue
     # track_uri is already the track ID from the query
     track_ids = [item["track_uri"] for item in artist_items]
     uri_to_name = {item["track_uri"]: item["name"] for item in artist_items}
