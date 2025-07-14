@@ -36,7 +36,7 @@ CORS(app)
 
 UPLOAD_DIR = "/tmp/spotify_sessions"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-MAX_SESSIONS = 1 # only one user can upload data at a time due to resource constraints
+MAX_SESSIONS = 1  # only one user can upload data at a time due to resource constraints
 
 
 def log_mem(msg):
@@ -451,7 +451,7 @@ def generate_animation():
                 writer="ffmpeg",
                 fps=speed_for_bar_animation,
                 savefig_kwargs={"facecolor": "#F0F0F0"},
-                # extra_args=['-preset', 'fast']
+                extra_args=["-preset", "veryfast"],
             )
             log_mem("After anim_bar_plot.save (ffmpeg encoding done)")
             temp_file.seek(0)
