@@ -17,7 +17,7 @@ The web app is deployed on Streamlit Cloud and you can access it [here](https://
 ## Features
 - **Animations**: Generate animations that showcase your favorite artists, songs, or albums.
 - **User-Friendly Interface**: Easy to use with a clean and modern design.
-- **Shareable**: Download your visualizations and animations to share on social media or with friends.
+- **Shareable**: Download your Visualisations and animations to share on social media or with friends.
 - **Open Source**: Built with Python and Streamlit, the code is available for anyone to contribute or modify.
 - **Third-Party Tool**: Uses Spotify data but is not affiliated with or endorsed by Spotify.
 - **Privacy Focused**: Your Spotify data is processed locally, and no personal information is stored or shared.
@@ -29,7 +29,7 @@ Python, Streamlit, Polars, Pandas, Matplotlib, NumPy, Requests, FFmpeg, HTML/CSS
 ## How to use
 1. **Upload your Spotify data**: follow the instructions on the web app
 2. **Select Data Type**: Choose whether you want to visualize your favorite artists, songs, or albums.
-3. **Generate Image and Animation**: Click the buttons to create your visualizations.
+3. **Generate Image and Animation**: Click the buttons to create your Visualisations.
 4. **Share**: Download the generated images and animations to share with your friends!
 
 

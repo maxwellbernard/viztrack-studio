@@ -398,7 +398,7 @@ st.markdown(
 st.markdown(
     """
     <div style="text-align: center;">
-        <p><strong>🎵 Upload your own Spotify data to create visualizations of your entire
+        <p><strong>🎵 Upload your own Spotify data to create Visualisations of your entire
           listening history! 🎵</strong></p>
     </div>
 """,
@@ -485,7 +485,7 @@ with col3:
                 Generate
             </p>
             <p style="font-size: 16px; font-weight: bold; margin: 0;">
-                Animations 🎞️
+                Visuals 🎞️
             </p>
         </div>
     </div>
@@ -523,7 +523,7 @@ with col4:
     )
 st.markdown("<br>", unsafe_allow_html=True)
 
-with st.expander("Click here to see what my visualizations look like!"):
+with st.expander("Click here to see what my Visualisations look like!"):
     st.markdown("<br>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
@@ -621,7 +621,7 @@ if uploaded_file and not st.session_state.form_values["data_uploaded"]:
                     "data_uploaded": True,
                 }
             )
-            st.success("Data uploaded successfully! 🎉")
+            st.success("History uploaded successfully! 🎉")
             st.rerun()
         except Exception as e:
             st.error(f"Error parsing response: {str(e)}")
@@ -631,7 +631,7 @@ if uploaded_file and not st.session_state.form_values["data_uploaded"]:
             "Failed to process file. Please make sure you uploaded the correct ZIP file from Spotify."
         )
 elif uploaded_file and st.session_state.form_values["data_uploaded"]:
-    st.success("Data uploaded successfully! 🎉")
+    st.success("History uploaded successfully! 🎉")
 
 else:
     st.warning("Please upload your Spotify ZIP file to proceed.")
@@ -946,8 +946,6 @@ st.markdown(
 st.markdown(
     """
     This application is open-source and available under the GNU General Public License v3.
-
-    You are free to use, modify, and distribute this software under the terms of the GPLv3.
 
     For more details, visit the [GitHub repository](https://github.com/maxwellbernard/spotify_animation_app). 
     """,
