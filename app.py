@@ -23,7 +23,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 import base64
 import os
 import tempfile
-import time
 import uuid
 from datetime import datetime, timezone
 
@@ -34,37 +33,6 @@ import streamlit as st
 from modules.create_bar_animation import days, dpi, figsize, interp_steps, period
 from modules.normalize_inputs import normalize_inputs
 from modules.supabase_client import supabase
-
-# restrict number of concurrent sessions to prevent server overload
-LOCK_FILE = "/tmp/spotify_app_session.lock"
-LOCK_TIMEOUT_SECONDS = 45 * 60  # 45 minutes
-
-
-def acquire_lock():
-    now = time.time()
-    if os.path.exists(LOCK_FILE):
-        try:
-            with open(LOCK_FILE, "r") as f:
-                lock_time = float(f.read().strip())
-            if now - lock_time > LOCK_TIMEOUT_SECONDS:
-                os.remove(LOCK_FILE)  # Expired lock, remove it
-            else:
-                return False
-        except Exception:
-            return False
-    with open(LOCK_FILE, "w") as f:
-        f.write(str(now))
-    return True
-
-
-if "lock_acquired" not in st.session_state:
-    st.session_state.lock_acquired = acquire_lock()
-
-if not st.session_state.lock_acquired:
-    st.error(
-        "Server is busy. Too many users are generating visuals right now. Please try again in a few minutes."
-    )
-    st.stop()
 
 st.set_page_config(
     page_title="Viztrack Studio",
