@@ -7,7 +7,6 @@ import traceback
 import uuid
 import zipfile
 from io import BytesIO
-import traceback
 
 import duckdb
 import matplotlib
@@ -26,7 +25,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from flask_cors import CORS
 
-from modules.create_bar_animation import create_bar_animation, dpi
+from modules.create_bar_animation import create_bar_animation
 from modules.create_bar_plot import plot_final_frame
 from modules.normalize_inputs import normalize_inputs
 from modules.prepare_visuals import error_logged, image_cache
@@ -36,6 +35,7 @@ CORS(app)
 
 UPLOAD_DIR = "/tmp/spotify_sessions"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 
 def log_mem(msg):
     process = psutil.Process(os.getpid())
@@ -380,6 +380,7 @@ def generate_image():
 @app.route("/generate_animation", methods=["POST"])
 def generate_animation():
     try:
+        t0 = time.time()
         log_mem("Start /generate_animation")
         data = request.get_json()
         session_id = data.get("session_id")
@@ -392,11 +393,17 @@ def generate_animation():
         days = data.get("days", 30)
         interp_steps = data.get("interp_steps", 14)
         period = data.get("period", "d")
+        dpi = data.get("dpi", 91)
+        figsize = data.get("figsize", (16, 21.2))
 
+        t1 = time.time()
+        print(f"Time to parse request data: {t1 - t0:.2f} seconds")
         df = query_user_duckdb_for_animation(
             session_id, selected_attribute, analysis_metric, start_date, end_date
         )
-        print(f"Query result for animation: {df.head(10)}")
+        # print(f"Query result for animation: {df.head(10)}")
+        t2 = time.time()
+        print(f"Time to query DuckDB for animation: {t2 - t1:.2f} seconds")
         log_mem("After query_user_duckdb_for_animation")
         if df is None:
             return jsonify(
@@ -405,7 +412,7 @@ def generate_animation():
                 }
             ), 400
         log_mem("After prepare_df_for_visual_anims")
-
+        t3 = time.time()
         anim_bar_plot = create_bar_animation(
             df,
             top_n,
@@ -417,12 +424,16 @@ def generate_animation():
             interp_steps,
             start_date,
             end_date,
+            figsize,
         )
+        t4 = time.time()
+        print(f"Time to create bar animation: {t4 - t3:.2f} seconds")
         log_mem("After create_bar_animation")
 
         # Save animation to a temporary file for download
         import tempfile
 
+        t5 = time.time()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
             temp_file_path = temp_file.name
             anim_bar_plot.save(
@@ -430,10 +441,13 @@ def generate_animation():
                 writer="ffmpeg",
                 fps=speed_for_bar_animation,
                 savefig_kwargs={"facecolor": "#F0F0F0"},
+                # extra_args=['-preset', 'ultrafast', '-crf', '28']
             )
             log_mem("After anim_bar_plot.save (ffmpeg encoding done)")
             temp_file.seek(0)
             video_bytes = temp_file.read()
+        t6 = time.time()
+        print(f"Time to save animation: {t6 - t5:.2f} seconds")
         video_base64 = base64.b64encode(video_bytes).decode("utf-8")
         filename = f"{selected_attribute}_{analysis_metric}_animation.mp4"
         return jsonify({"video": video_base64, "filename": filename}), 200
@@ -441,3 +455,8 @@ def generate_animation():
     except Exception as e:
         print(traceback.format_exc())
         return jsonify({"error": f"Animation generation failed: {str(e)}"}), 500
+
+
+# if __name__ == "__main__":
+#     app.run(host="0.0.0.0", port=8080, debug=True)
+#     app.run(host="0.0.0.0", port=8080, debug=True)
