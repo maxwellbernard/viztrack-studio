@@ -795,6 +795,8 @@ if st.button("Generate Animation", key="generate_animation_button"):
     #         },
     #     )
     #     st.session_state.generate_animation_clicked = False  # reset flag
+    st.session_state.temp_file_path_bar_anim = None
+    st.session_state.file_name_for_download = None
     track_event(
         "generate_animation",
         metadata={
@@ -842,14 +844,20 @@ if st.button("Generate Animation", key="generate_animation_button"):
                         st.session_state.file_name_for_download = filename
                     message_placeholder.empty()
                 except Exception as e:
+                    st.session_state.temp_file_path_bar_anim = None
+                    st.session_state.file_name_for_download = None
                     st.error(f"Error processing animation response: {str(e)}")
             else:
                 try:
                     error_data = response.json()
+                    st.session_state.temp_file_path_bar_anim = None
+                    st.session_state.file_name_for_download = None
                     st.error(
                         f"Animation generation failed: {error_data.get('error', 'Unknown error')}"
                     )
                 except Exception:
+                    st.session_state.temp_file_path_bar_anim = None
+                    st.session_state.file_name_for_download = None
                     st.error("Failed to generate animation. Please try again.")
     else:
         st.warning("Please upload your Spotify JSON files to proceed.")
