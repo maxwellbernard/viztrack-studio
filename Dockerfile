@@ -3,6 +3,7 @@
 ARG PYTHON_VERSION=3.13.5
 
 FROM python:${PYTHON_VERSION}-slim
+ENV PYTHONUNBUFFERED=1
 
 LABEL fly_launch_runtime="flask"
 
