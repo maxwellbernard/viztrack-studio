@@ -450,6 +450,13 @@ def generate_animation():
         print(f"Time to save animation: {t6 - t5:.2f} seconds")
         video_base64 = base64.b64encode(video_bytes).decode("utf-8")
         filename = f"{selected_attribute}_{analysis_metric}_animation.mp4"
+        try:
+            os.remove(temp_file_path)
+        except Exception as cleanup_exc:
+            print(f"Warning: Could not delete temp animation file: {cleanup_exc}")
+        import gc
+        plt.close('all')
+        gc.collect()
         return jsonify({"video": video_base64, "filename": filename}), 200
 
     except Exception as e:
