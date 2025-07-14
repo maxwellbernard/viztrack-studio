@@ -31,7 +31,7 @@ client_credentials_manager = SpotifyClientCredentials(
 sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
 
-def fetch_images_batch(items_data: List[Dict]) -> Dict[str, str]:
+def fetch_images_batch(items_data: List[Dict], target_size: int) -> Dict[str, str]:
     """
     Fetch images in batches using Spotify's batch endpoints.
     """
@@ -51,7 +51,7 @@ def fetch_images_batch(items_data: List[Dict]) -> Dict[str, str]:
 
     if tracks:
         track_uris = [item["track_uri"] for item in tracks]
-        track_images = _fetch_tracks_batch(track_uris)
+        track_images = _fetch_tracks_batch(track_uris, target_size)
         image_urls.update(track_images)
 
     if albums:
@@ -81,16 +81,50 @@ def _fetch_artists_from_tracks_batch(artist_items: List[Dict]) -> Dict[str, str]
     # we only have artist_name from metadata, so we need to get the artist_id from the
     # track_uri to be able to process the artist images in batches.
 
-    # extract track IDs from URIs
-    track_uris = [item["track_uri"] for item in artist_items]
-    track_ids = []
-    uri_to_name = {}
+    # # extract track IDs from URIs
+    # track_uris = [item["track_uri"] for item in artist_items]
+    # # track_ids = []
+    # # uri_to_name = {}
 
-    for item in artist_items:
-        track_uri = item["track_uri"]
-        track_id = track_uri.split(":")[-1] if ":" in track_uri else track_uri
-        track_ids.append(track_id)
-        uri_to_name[track_uri] = item["name"]  # store the artist name by track_uri
+    # # for item in artist_items:
+    # #     track_uri = item["track_uri"]
+    # #     track_id = track_uri.split(":")[-1] if ":" in track_uri else track_uri
+    # #     track_ids.append(track_id)
+    # #     uri_to_name[track_uri] = item["name"]  # store the artist name by track_uri
+    # track_ids = [item["track_uri"] for item in artist_items]
+    # uri_to_name = {item["track_uri"]: item["name"] for item in artist_items}
+
+    # # batch fetch track information
+    # artist_id_to_name = {}
+    # all_artist_ids = []
+
+    # for i in range(0, len(track_ids), 50):
+    #     batch_track_ids = track_ids[i : i + 50]
+    #     batch_track_uris = track_uris[i : i + 50]
+
+    #     try:
+    #         tracks_response = sp.tracks(batch_track_ids)
+
+    #         for j, track in enumerate(tracks_response["tracks"]):
+    #             if track and track.get("artists"):
+    #                 track_uri = batch_track_uris[j]
+    #                 artist_name = uri_to_name.get(track_uri)
+
+    #                 for artist in track["artists"]:
+    #                     if artist["name"] == artist_name:
+    #                         artist_id = artist["id"]
+    #                         artist_id_to_name[artist_id] = artist_name
+    #                         all_artist_ids.append(artist_id)
+    #                         break
+
+    #         time.sleep(0.1)
+
+    #     except Exception as e:
+    #         print(f"Batch tracks API failed: {e}")
+    #         continue
+    # track_uri is already the track ID from the query
+    track_ids = [item["track_uri"] for item in artist_items]
+    uri_to_name = {item["track_uri"]: item["name"] for item in artist_items}
 
     # batch fetch track information
     artist_id_to_name = {}
@@ -98,15 +132,14 @@ def _fetch_artists_from_tracks_batch(artist_items: List[Dict]) -> Dict[str, str]
 
     for i in range(0, len(track_ids), 50):
         batch_track_ids = track_ids[i : i + 50]
-        batch_track_uris = track_uris[i : i + 50]
 
         try:
             tracks_response = sp.tracks(batch_track_ids)
 
             for j, track in enumerate(tracks_response["tracks"]):
                 if track and track.get("artists"):
-                    track_uri = batch_track_uris[j]
-                    artist_name = uri_to_name.get(track_uri)
+                    track_id = batch_track_ids[j]
+                    artist_name = uri_to_name.get(track_id)
 
                     for artist in track["artists"]:
                         if artist["name"] == artist_name:
@@ -147,7 +180,7 @@ def _fetch_artists_from_tracks_batch(artist_items: List[Dict]) -> Dict[str, str]
     return image_urls
 
 
-def _fetch_tracks_batch(track_uris: List[str]) -> Dict[str, str]:
+def _fetch_tracks_batch(track_uris: List[str], target_size: int) -> Dict[str, str]:
     """Fetch track images in batches of 50"""
     image_urls = {}
 
@@ -157,7 +190,19 @@ def _fetch_tracks_batch(track_uris: List[str]) -> Dict[str, str]:
             tracks_response = sp.tracks(batch)
             for track in tracks_response["tracks"]:
                 if track and track["album"].get("images"):
-                    image_urls[track["uri"]] = track["album"]["images"][0]["url"]
+                    images = track["album"]["images"]
+                    images_sorted = sorted(images, key=lambda img: img["height"])
+                    # Pick the smallest image >= target_size, or the smallest available
+                    image_url = None
+                    for img in images_sorted:
+                        if img["height"] >= target_size:
+                            image_url = img["url"]
+                            break
+                    if not image_url and images_sorted:
+                        image_url = images_sorted[-1][
+                            "url"
+                        ]  # fallback to largest if none big enough
+                    image_urls[track["uri"]] = image_url
         except spotipy.exceptions.SpotifyException as e:
             if e.http_status == 429:
                 retry_after = int(e.headers.get("Retry-After", 5))
@@ -278,28 +323,4 @@ def setup_bar_plot_style(
     ax.set_xticks([])
     ax.set_facecolor("none")
     ax.patch.set_alpha(0.0)
-    return None
-
-
-def setup_line_plot_style(
-    ax: plt.Axes,
-    top_n: int = 10,
-    analysis_metric: str = "Streams",
-) -> None:
-    """Apply consistent plot styling"""
-    ax.set_xlabel("Date", fontsize=18)
-    ax.set_ylabel(f"Cumulative {analysis_metric}", fontsize=18)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_linewidth(3)
-    ax.spines["bottom"].set_linewidth(3)
-    ax.spines["left"].set_color("grey")
-    ax.spines["bottom"].set_color("grey")
-    ax.margins(x=0.05)
-    ax.set_title(" ", pad=200, fontsize=14, fontweight="bold")
-    ax.xaxis.labelpad = 30
-    ax.grid(False)
-    ax.title.set_position([0.5, 1.3])
-    ax.title.set_fontsize(20)
-    ax.set_facecolor("#F0F0F0")  # off white
     return None
